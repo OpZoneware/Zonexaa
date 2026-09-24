@@ -8,22 +8,15 @@
 
 const CONFIG = {
 
-  /* Apps Script Web App URL.
-     Deploy > New deployment > Web app, then paste the URL here. */
-  API_URL: 'https://script.google.com/macros/s/AKfycbycMs9TBFdifqbvSPFH9zlO-wRfqCUzOCLisaZGlw9b8UGKkYnZ-BrqUWA07St5lLGLag/exec',
-
-  /* Google Cloud OAuth Client ID (Web application).
-     Console > APIs & Services > Credentials > Create OAuth client ID.
-     Leave blank to fall back to directory sign-in during setup. */
-  GOOGLE_CLIENT_ID: '870128330816-dth54pd32eqgib6apk3n9reghpbosgaa.apps.googleusercontent.com',
-
-  /* Only addresses on these domains may sign in. */
-  ALLOWED_DOMAINS: ['redwarelimited.com', 'zonewareltd.com'],
+  /* The Apps Script Web App URL. The only setting you must fill in.
+     Deploy > New deployment > Web app, Execute as Me,
+     Who has access: Anyone. Copy the /exec URL here. */
+  API_URL: '',
 
   ORG:     'Zoneware Limited',
   SYSTEM:  'Zonexa',
   TAGLINE: 'Project Tracking System',
-  VERSION: '1.0'
+  VERSION: '1.1'
 };
 
 /* ---------- board columns (order matters) ---------- */

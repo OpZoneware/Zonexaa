@@ -4,26 +4,28 @@
  *
  * The only file the Vercel site talks to.
  *
- *   zonexa-phi.vercel.app   →   this Web App   →   Google Sheet
+ *   zonexaa.vercel.app  ──▶  this Web App  ──▶  Google Sheet
  *
  * ---------------------------------------------------------------
- * Why it is written this way
+ * Transport
  * ---------------------------------------------------------------
- * 1. CORS. Apps Script cannot set response headers, so a browser
- *    preflight (OPTIONS) can never be answered. The only requests
- *    that work cross-origin are "simple" ones. A POST counts as
- *    simple when its Content-Type is text/plain, so the front end
- *    sends JSON as a text/plain body. Do not change that header to
- *    application/json — it will start failing preflight and every
- *    call will die with a CORS error.
+ * Apps Script cannot set response headers, so it can never send
+ * Access-Control-Allow-Origin and can never answer a CORS preflight.
+ * Rather than fight that, the front end does not use fetch at all.
+ * It loads a <script> tag pointing at this endpoint and reads the
+ * answer through a callback — JSONP. Script tags have never been
+ * subject to the same-origin policy, so CORS simply does not apply.
  *
- * 2. Identity. Session.getActiveUser() returns nothing on a
- *    cross-origin call, so it cannot be used. Instead the browser
- *    sends the Google ID token it got at sign-in, and this file
- *    verifies it with Google before trusting the address inside it.
- *    A forged token fails verification. The email is then handed to
- *    Code.gs, which looks up the role and applies the step-ownership
- *    rules exactly as before.
+ * That makes doGet the main entry point. doPost is kept for anything
+ * too large for a URL, and for testing with curl.
+ *
+ * ---------------------------------------------------------------
+ * Identity
+ * ---------------------------------------------------------------
+ * Username and password, held on the Users tab. See Auth.gs.
+ * A successful login returns a session token lasting 12 hours; every
+ * later request carries it. No Google account, no OAuth client, no
+ * authorised origins to maintain.
  *
  * ---------------------------------------------------------------
  * Deployment
@@ -32,61 +34,44 @@
  *     Execute as     : Me
  *     Who has access : Anyone
  *
- * "Anyone" is required. The request arrives from a Vercel page, not
- * from a signed-in Google session, so Google cannot identify the
- * caller at the door. Access is not open: every request is rejected
- * unless it carries a valid Google ID token for an address on an
- * allowed domain that also appears in the Users tab. The door is
- * unlocked; the guard is inside.
+ * "Anyone" is required and is not negotiable. The request arrives
+ * from a Vercel page with no Google session attached, so Google
+ * cannot identify the caller at the door. Set it to anything else
+ * and Google answers with a login page instead of your data.
+ *
+ * Access is not open. Every action except 'login' and 'ping' is
+ * refused without a valid session token, and login itself is refused
+ * without a correct password. The door is unlocked; the guard is
+ * inside.
  */
 
-/* Domains permitted to sign in. */
-var ALLOWED_DOMAINS = ['redwarelimited.com', 'zonewareltd.com'];
-
-/* The OAuth Client ID from Google Cloud Console.
-   Must match CONFIG.GOOGLE_CLIENT_ID in the front end exactly.
-   Tokens issued to any other client are rejected. */
-var OAUTH_CLIENT_ID = '';
+/* Actions permitted without a session token */
+var PUBLIC_ACTIONS = ['ping', 'login'];
 
 /* ============================================================
    Entry points
    ============================================================ */
 
-function doPost(e) {
-  try {
-    var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    return handle(body.action, body.payload, body.token);
-  } catch (err) {
-    return json({ error: String(err && err.message || err) });
-  }
-}
-
-/**
- * GET is supported for reads only, and answers JSONP when a
- * callback is supplied. Useful for a quick browser test:
- *
- *   <WEB_APP_URL>?action=ping
- */
 function doGet(e) {
   var p = (e && e.parameter) || {};
-
-  if (p.action === 'ping') {
-    return json({
-      data: {
-        service: 'Zonexa API',
-        status: 'up',
-        clientIdConfigured: Boolean(OAUTH_CLIENT_ID),
-        time: new Date().toISOString()
-      }
-    }, p.callback);
-  }
-
+  var payload = {};
   try {
-    var payload = p.payload ? JSON.parse(p.payload) : {};
-    return handle(p.action, payload, p.token, p.callback);
+    payload = p.payload ? JSON.parse(p.payload) : {};
   } catch (err) {
-    return json({ error: String(err && err.message || err) }, p.callback);
+    return json({ error: 'Malformed payload.' }, p.callback);
   }
+  return handle(p.action, payload, p.token, p.callback);
+}
+
+function doPost(e) {
+  var body = {};
+  try {
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    return json({ error: 'Malformed request.' });
+  }
+  var cb = (e && e.parameter && e.parameter.callback) || body.callback;
+  return handle(body.action, body.payload, body.token, cb);
 }
 
 /* ============================================================
@@ -94,41 +79,78 @@ function doGet(e) {
    ============================================================ */
 
 function handle(action, payload, token, callback) {
-  if (!action) return json({ error: 'No action supplied.' }, callback);
-
-  var email;
-  try {
-    email = verifyIdToken(token);
-  } catch (err) {
-    return json({ error: String(err.message || err), authFailed: true }, callback);
-  }
-
-  /* Hand the verified identity to Code.gs for the life of this request */
-  REQUEST_EMAIL = email;
+  payload = payload || {};
 
   try {
-    if (action === 'whoami') {
-      var u = currentUser();
-      if (!u) {
-        return json({
-          error: email + ' is not on the Users tab of the Zonexa workbook. ' +
-                 'Ask the Head of Projects & Operations to add you.',
-          authFailed: true
-        }, callback);
-      }
-      return json({ data: u }, callback);
+    if (!action) throw new Error('No action supplied.');
+
+    /* ---- open actions ---- */
+
+    if (action === 'ping') {
+      return json({
+        data: {
+          service: 'Zonexa API',
+          status: 'up',
+          auth: 'username/password',
+          time: new Date().toISOString()
+        }
+      }, callback);
     }
 
-    var lock = LockService.getScriptLock();
-    var needsLock = WRITE_ACTIONS.indexOf(action) !== -1;
-    if (needsLock) lock.waitLock(20000);
+    if (action === 'login') {
+      var lr = login(payload.username, payload.password);
+      audit('login', lr.user.email, { role: lr.user.role });
+      return json({ data: lr }, callback);
+    }
 
+    /* ---- everything below needs a valid session ---- */
+
+    var email = emailForToken(token);
+    if (!email) {
+      return json({
+        error: 'Your session has ended. Sign in again.',
+        authFailed: true
+      }, callback);
+    }
+
+    REQUEST_EMAIL = email;
+
+    var u = currentUser();
+    if (!u) {
+      return json({
+        error: email + ' is no longer an active user on this system.',
+        authFailed: true
+      }, callback);
+    }
+
+    if (action === 'whoami')  return json({ data: u }, callback);
+    if (action === 'logout')  return json({ data: revokeToken(token) }, callback);
+
+    if (action === 'changePassword') {
+      return json({
+        data: changePassword(payload.currentPassword, payload.newPassword)
+      }, callback);
+    }
+
+    if (action === 'adminSetPassword') {
+      return json({
+        data: adminSetPassword(payload.email, payload.password)
+      }, callback);
+    }
+
+    /* ---- project data ---- */
+
+    var needsLock = WRITE_ACTIONS.indexOf(action) !== -1;
+    var lock = null;
+
+    if (needsLock) {
+      lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+    }
     try {
-      return json({ data: apiCall(action, payload || {}) }, callback);
+      return json({ data: apiCall(action, payload) }, callback);
     } finally {
-      if (needsLock) {
-        try { lock.releaseLock(); } catch (ignore) {}
-      }
+      if (lock) { try { lock.releaseLock(); } catch (ignore) {} }
     }
 
   } catch (err) {
@@ -139,62 +161,15 @@ function handle(action, payload, token, callback) {
 }
 
 /* ============================================================
-   Token verification
-   ============================================================ */
-
-/**
- * Confirms the ID token was issued by Google, for this application,
- * to a live address on an allowed domain. Returns the address.
- * Throws otherwise. Results are cached for five minutes so a busy
- * session does not call Google on every keystroke.
- */
-function verifyIdToken(token) {
-  if (!token) throw new Error('Not signed in.');
-
-  var cache = CacheService.getScriptCache();
-  var key = 'idt_' + Utilities.base64EncodeWebSafe(
-    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token));
-
-  var hit = cache.get(key);
-  if (hit) return hit;
-
-  var res = UrlFetchApp.fetch(
-    'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token),
-    { muteHttpExceptions: true });
-
-  if (res.getResponseCode() !== 200) {
-    throw new Error('Your session has expired. Sign in again.');
-  }
-
-  var claims = JSON.parse(res.getContentText());
-
-  if (OAUTH_CLIENT_ID && claims.aud !== OAUTH_CLIENT_ID) {
-    throw new Error('This sign-in was not issued for Zonexa.');
-  }
-  if (String(claims.email_verified) !== 'true') {
-    throw new Error('That Google account is not verified.');
-  }
-
-  var email = String(claims.email || '').toLowerCase();
-  var domain = email.split('@')[1] || '';
-  if (ALLOWED_DOMAINS.indexOf(domain) === -1) {
-    throw new Error('Sign in with your Zoneware or Redware account.');
-  }
-
-  /* Cache until the token expires, capped at five minutes */
-  var secondsLeft = Number(claims.exp) - Math.floor(Date.now() / 1000);
-  cache.put(key, email, Math.max(30, Math.min(300, secondsLeft - 30)));
-
-  return email;
-}
-
-/* ============================================================
    Response
    ============================================================ */
 
 function json(obj, callback) {
   var text = JSON.stringify(obj);
   if (callback) {
+    /* Only allow a plain identifier as the callback name, so the
+       response can never be turned into arbitrary script. */
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(callback)) callback = 'zxcb';
     return ContentService
       .createTextOutput(callback + '(' + text + ');')
       .setMimeType(ContentService.MimeType.JAVASCRIPT);

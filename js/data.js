@@ -1204,55 +1204,16 @@ const SEED_PROJECTS = [
  }
 ];
 
+/* Names only, used to populate the project-manager dropdown when
+   the app is running offline. Roles and credentials are never taken
+   from here — the server reads them off the Users tab. */
 const SEED_USERS = [
- {
-  "id": "U-01",
-  "name": "Dile Ipinmoroti",
-  "email": "dile@redwarelimited.com",
-  "role": "Managing Director"
- },
- {
-  "id": "U-02",
-  "name": "Oluwatoyin Bada",
-  "email": "oluwatoyin@redwarelimited.com",
-  "role": "Head of Projects & Operations"
- },
- {
-  "id": "U-03",
-  "name": "Olutimehin Daniel Gbenga",
-  "email": "operations@redwarelimited.com",
-  "role": "Operations & Process Improvement"
- },
- {
-  "id": "U-04",
-  "name": "Roseline Adeyemi",
-  "email": "roseline@redwarelimited.com",
-  "role": "Project Manager"
- },
- {
-  "id": "U-05",
-  "name": "Rokibat Adeyemo",
-  "email": "rokibat@redwarelimited.com",
-  "role": "Project Manager"
- },
- {
-  "id": "U-06",
-  "name": "Seyifunmi Alabi",
-  "email": "seyifunmi@redwarelimited.com",
-  "role": "Project Manager"
- },
- {
-  "id": "U-07",
-  "name": "Omowunmi",
-  "email": "accounts@redwarelimited.com",
-  "role": "Accountant"
- },
- {
-  "id": "U-08",
-  "name": "Alomasojo Gbenga",
-  "email": "admin@redwarelimited.com",
-  "role": "Administrative Officer"
- }
+ { "id": "U-01", "name": "Dile Ipinmoroti", "email": "dile@redwarelimited.com", "role": "Managing Director" },
+ { "id": "U-02", "name": "Oluwatoyin Bada", "email": "oluwatoyin@redwarelimited.com", "role": "Head of Projects & Operations" },
+ { "id": "U-03", "name": "Olutimehin Daniel Gbenga", "email": "operations@redwarelimited.com", "role": "IT Support" },
+ { "id": "U-04", "name": "Roseline Adeyemi", "email": "roseline@redwarelimited.com", "role": "Project Manager" },
+ { "id": "U-05", "name": "Rokibat Adeyemo", "email": "rokibat@redwarelimited.com", "role": "Project Manager" },
+ { "id": "U-06", "name": "Seyifunmi Alabi", "email": "seyifunmi@redwarelimited.com", "role": "Project Manager" }
 ];
 
 const COMPANY = {

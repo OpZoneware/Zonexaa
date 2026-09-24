@@ -1,141 +1,102 @@
 /* ============================================================
    ZONEXA — Sign-in
    ------------------------------------------------------------
-   Primary   : Google Workspace account via Google Identity Services
-   Fallback  : directory sign-in, used only while the OAuth client
-               ID is being issued
+   Username and password, checked by Apps Script against the Users
+   tab of the workbook.
+
+   Nothing is decided in the browser. The password is never stored
+   anywhere on this side; what comes back is a session token that
+   lasts 12 hours, and the role attached to it is read off the Sheet
+   by the server on every single request. Editing localStorage to
+   say "Managing Director" achieves nothing.
    ============================================================ */
 
 const Auth = {
 
-  googleReady() {
-    return Boolean(CONFIG.GOOGLE_CLIENT_ID);
-  },
+  /* ---------- sign in ---------- */
 
-  /* ---------- Google Identity Services ---------- */
+  async signIn(username, password) {
+    username = String(username || '').trim();
+    password = String(password || '');
 
-  mountGoogleButton(elementId, onDone) {
-    if (!this.googleReady() || !window.google || !google.accounts) return false;
+    if (!username || !password) {
+      return { ok: false, error: 'Enter your username and password.' };
+    }
 
-    google.accounts.id.initialize({
-      client_id: CONFIG.GOOGLE_CLIENT_ID,
-      callback: (response) => {
-        const claims = this.decode(response.credential);
-        if (!claims) { onDone({ ok: false, error: 'Sign-in could not be verified.' }); return; }
-        this.accept(claims.email, claims.name, claims.picture, response.credential)
-            .then(onDone);
-      },
-      auto_select: false,
-      cancel_on_tap_outside: true
-    });
+    if (!API.connected()) {
+      return {
+        ok: false,
+        error: 'The system is not connected to its server yet. ' +
+               'CONFIG.API_URL has not been set.'
+      };
+    }
 
-    google.accounts.id.renderButton(document.getElementById(elementId), {
-      theme: 'outline', size: 'large', width: 320,
-      text: 'signin_with', shape: 'rectangular', logo_alignment: 'left'
-    });
-
-    return true;
-  },
-
-  /* Reads the payload of a Google ID token.
-     Identity is re-verified server side by Apps Script, which is
-     deployed against the Redware Workspace domain. */
-  decode(jwt) {
+    let result;
     try {
-      const part = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      const json = decodeURIComponent(
-        atob(part).split('').map(c =>
-          '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-      );
-      return JSON.parse(json);
-    } catch (e) { return null; }
+      result = await API.login(username, password);
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+
+    if (!result || !result.token) {
+      return { ok: false, error: 'Sign-in failed. Try again.' };
+    }
+
+    Store.setSession({
+      id:       result.user.id,
+      name:     result.user.name,
+      email:    result.user.email,
+      username: result.user.username,
+      role:     result.user.role,
+      token:    result.token,
+      mustChangePassword: Boolean(result.user.mustChangePassword),
+      signedInAt: new Date().toISOString()
+    });
+
+    return { ok: true, mustChangePassword: Boolean(result.user.mustChangePassword) };
   },
 
-  /* ---------- shared acceptance path ---------- */
+  /* ---------- password ---------- */
 
-  /* The role is never decided in the browser. When the API is
-     connected, the token goes to Apps Script, Apps Script verifies it
-     with Google and reads the role off the Users tab of the workbook.
-     SEED_USERS is only used offline, before the API URL is set. */
-  async accept(email, displayName, picture, credential) {
-    email = String(email || '').trim().toLowerCase();
-    const domain = email.split('@')[1] || '';
-
-    if (!CONFIG.ALLOWED_DOMAINS.includes(domain)) {
-      return { ok: false, error: 'Sign in with your Zoneware or Redware account.' };
+  async changePassword(currentPassword, newPassword, confirmPassword) {
+    if (String(newPassword).length < 8) {
+      return { ok: false, error: 'New password must be at least 8 characters.' };
+    }
+    if (newPassword !== confirmPassword) {
+      return { ok: false, error: 'The two new passwords do not match.' };
+    }
+    if (newPassword === currentPassword) {
+      return { ok: false, error: 'Choose a password you have not used before.' };
     }
 
-    /* Held first so API.call() can read the token on the next line */
-    Store.setSession({
-      id: '', name: displayName || email, email,
-      role: '', picture: picture || '',
-      credential: credential || '',
-      signedInAt: new Date().toISOString()
-    });
-
-    let record;
-
-    if (API.connected() && credential) {
-      try {
-        record = await API.whoami();
-      } catch (err) {
-        Store.clearSession();
-        return { ok: false, error: err.message };
-      }
-    } else {
-      record = SEED_USERS.find(u => u.email.toLowerCase() === email);
-      if (!record) {
-        Store.clearSession();
-        return {
-          ok: false,
-          error: 'That account is not yet registered on the system. Contact the administrator.'
-        };
-      }
+    try {
+      await API.changePassword(currentPassword, newPassword);
+    } catch (err) {
+      return { ok: false, error: err.message };
     }
 
-    Store.setSession({
-      id: record.id,
-      name: record.name || displayName || email,
-      email: record.email,
-      role: record.role,
-      picture: picture || '',
-      credential: credential || '',
-      signedInAt: new Date().toISOString()
-    });
+    const s = Store.session() || {};
+    s.mustChangePassword = false;
+    Store.setSession(s);
     return { ok: true };
   },
 
-  /* Directory sign-in — offline only, before the API URL is set */
-  signInByEmail(email) {
-    return this.accept(email, '', '', '');
+  mustChangePassword() {
+    const s = Store.session();
+    return Boolean(s && s.mustChangePassword);
   },
 
-  /* A Google ID token lasts one hour. When the back end rejects one,
-     this asks Google for a fresh one without a full sign-in page. */
-  renew() {
-    return new Promise((resolve) => {
-      if (!this.googleReady() || !window.google || !google.accounts) {
-        return resolve(false);
-      }
-      google.accounts.id.initialize({
-        client_id: CONFIG.GOOGLE_CLIENT_ID,
-        callback: (response) => {
-          const claims = this.decode(response.credential);
-          if (!claims) return resolve(false);
-          this.accept(claims.email, claims.name, claims.picture, response.credential)
-              .then(r => resolve(r.ok));
-        },
-        auto_select: true
-      });
-      google.accounts.id.prompt();
-    });
-  },
+  /* ---------- sign out ---------- */
 
-  signOut() {
-    if (this.googleReady() && window.google && google.accounts) {
-      try { google.accounts.id.disableAutoSelect(); } catch (e) {}
-    }
+  async signOut() {
+    try { await API.logout(); } catch (e) { /* leaving anyway */ }
     Store.clearSession();
     location.href = 'index.html';
+  },
+
+  /* Called when the server reports the session has expired. */
+  expired() {
+    Store.clearSession();
+    location.replace('index.html?expired=1');
   }
 };

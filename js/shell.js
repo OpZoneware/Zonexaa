@@ -222,3 +222,15 @@ function options(list, selected) {
   return list.map(o => '<option' + (o === selected ? ' selected' : '') +
     '>' + esc(o) + '</option>').join('');
 }
+
+
+/* ------------------------------------------------------------
+   Any request that comes back with an expired session sends the
+   user straight back to sign-in, wherever they are in the app.
+   ------------------------------------------------------------ */
+window.addEventListener('unhandledrejection', function (e) {
+  const err = e && e.reason;
+  if (err && (err.authFailed || /session has ended/i.test(err.message || ''))) {
+    Auth.expired();
+  }
+});

@@ -1,0 +1,1526 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zonexa — Apps Script files</title><style>
+*{box-sizing:border-box}body{margin:0;background:#fafafa;color:#1a1a1a;
+font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+header{background:#0a0a0a;color:#fff;padding:22px 26px}header h1{margin:0;font-size:19px}
+header p{margin:6px 0 0;font-size:12.5px;color:#9a9a9a}
+.wrap{max-width:1100px;margin:0 auto;padding:22px 26px 60px}
+.note{background:#fff;border:1px solid rgba(10,10,10,.12);border-left:3px solid #45c0d6;
+border-radius:14px;padding:14px 16px;margin:0 0 14px;font-size:13px}
+.warn{border-left-color:#dc2626}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0}
+.tab{border:1px solid rgba(10,10,10,.12);background:#fff;color:#1a1a1a;border-radius:11px;
+padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.tab small{color:#999;font-weight:400}.tab.on{background:#0a0a0a;color:#fff;border-color:#0a0a0a}
+.tab.on small{color:#777}.pane{display:none}.pane.on{display:block}
+.bar{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;background:#fff;
+border:1px solid rgba(10,10,10,.12);border-radius:14px 14px 0 0;border-bottom:none;padding:14px 16px}
+.meta b{font-size:14px}.meta span{margin-left:10px;font-size:11.5px;color:#777}
+.meta p{margin:6px 0 0;font-size:12.5px;color:#555;max-width:62ch}.meta p.dest{color:#0a0a0a}
+.meta code{background:#f0f0f0;border-radius:5px;padding:1px 6px;font-size:12px}
+.copy{flex:none;background:#0a0a0a;color:#fff;border:0;border-radius:10px;padding:9px 16px;
+font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}.copy.done{background:#16a34a}
+pre{margin:0;background:#fff;border:1px solid rgba(10,10,10,.12);border-radius:0 0 14px 14px;
+padding:18px;overflow:auto;max-height:64vh;font-size:12px;line-height:1.5;
+font-family:ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;tab-size:2}
+footer{margin-top:26px;font-size:12px;color:#777}
+</style></head><body>
+<header><h1>Zonexa — Apps Script files</h1>
+<p>Zoneware Limited · backend for zonexaa.vercel.app · username/password build · 24 Sep 2026 14:04</p></header>
+<div class="wrap">
+<div class="note"><b>Six files.</b> Google Sheet → <b>Extensions → Apps Script</b>.
+Clear the default <code>Code.gs</code>, then create each one with <b>+ → Script</b> and paste.
+Names without <code>.gs</code>. Save, run <code>setupZonexa</code>, then
+<b>Deploy → New deployment → Web app</b>, Execute as <b>Me</b>, access <b>Anyone</b>.
+Finally run <code>generateStartingPasswords</code> and copy the list from the execution log.</div>
+<div class="note warn"><b>Access must be "Anyone".</b> Not "Anyone within Redware Limited".
+The request comes from Vercel with no Google session attached — anything narrower and Google
+returns a login page, which is the CORS error and the 401 you saw.</div>
+<div class="tabs"><button class="tab on" data-i="0" onclick="show(0)">Code<small>.gs</small></button><button class="tab" data-i="1" onclick="show(1)">Api<small>.gs</small></button><button class="tab" data-i="2" onclick="show(2)">Auth<small>.gs</small></button><button class="tab" data-i="3" onclick="show(3)">Setup<small>.gs</small></button><button class="tab" data-i="4" onclick="show(4)">Reference<small>.gs</small></button><button class="tab" data-i="5" onclick="show(5)">Summary<small>.gs</small></button></div>
+<section class="pane on" id="p0">
+  <div class="bar"><div class="meta"><b>Code.gs</b><span>334 lines · 10,411 characters</span>
+   <p>Sheet helpers, API dispatcher, and every permission rule.</p>
+   <p class="dest">In Apps Script: <b>+ → Script</b>, name it <code>Code</code> — no extension.</p></div>
+   <button class="copy" onclick="cp(0,this)">Copy all</button></div>
+  <pre id="c0">/**
+ * ZONEXA — API core
+ * Zoneware Limited · Project Tracking System
+ *
+ * This script holds no interface. The interface is the Vercel site.
+ * This is the database layer and the rule layer: it reads and writes
+ * the bound Google Sheet, and it decides who is allowed to do what.
+ *
+ * Requests arrive from the browser at Api.gs (doPost / doGet) and are
+ * dispatched here through apiCall().
+ */
+
+/* ============================================================
+   Identity — from the verified Google ID token on the request
+   ============================================================ */
+
+/* Set by Api.gs once the caller&#x27;s Google ID token has been verified.
+   Nothing in this file ever trusts anything sent by the browser
+   other than this address. */
+var REQUEST_EMAIL = &#x27;&#x27;;
+
+function currentUser() {
+  var email = REQUEST_EMAIL;
+  if (!email) return null;
+
+  var rows = readAll(&#x27;Users&#x27;);
+  for (var i = 0; i &lt; rows.length; i++) {
+    if (String(rows[i].email).toLowerCase() === email.toLowerCase()
+        &amp;&amp; String(rows[i].active).toLowerCase() !== &#x27;no&#x27;) {
+      return {
+        id: rows[i].id,
+        name: rows[i].name,
+        email: rows[i].email,
+        role: rows[i].role
+      };
+    }
+  }
+  return null;
+}
+
+function signedInEmail() { return REQUEST_EMAIL || &#x27;&#x27;; }
+
+/* ============================================================
+   Sheet helpers
+   ============================================================ */
+
+function book() { return SpreadsheetApp.getActiveSpreadsheet(); }
+
+function tab(name) {
+  var sheet = book().getSheetByName(name);
+  if (!sheet) throw new Error(&#x27;Sheet tab not found: &#x27; + name);
+  return sheet;
+}
+
+function readAll(name) {
+  var values = tab(name).getDataRange().getValues();
+  if (values.length &lt; 2) return [];
+  var head = values[0];
+  return values.slice(1)
+    .filter(function (r) { return String(r[0]).length; })
+    .map(function (r) {
+      var o = {};
+      head.forEach(function (h, i) {
+        if (!h) return;
+        var v = r[i];
+        if (v instanceof Date) v = Utilities.formatDate(v, &#x27;GMT&#x27;, &#x27;yyyy-MM-dd&#x27;);
+        o[String(h)] = v;
+      });
+      return o;
+    });
+}
+
+function findRow(name, keyCols, keyVals) {
+  var values = tab(name).getDataRange().getValues();
+  var head = values[0];
+  var idx = keyCols.map(function (c) { return head.indexOf(c); });
+  for (var r = 1; r &lt; values.length; r++) {
+    var hit = idx.every(function (ci, k) {
+      return String(values[r][ci]) === String(keyVals[k]);
+    });
+    if (hit) return r + 1;
+  }
+  return -1;
+}
+
+function upsert(name, keyCols, keyVals, patch) {
+  var sheet = tab(name);
+  var head = sheet.getDataRange().getValues()[0];
+  var row = findRow(name, keyCols, keyVals);
+
+  if (row === -1) {
+    sheet.appendRow(head.map(function (h) {
+      var k = keyCols.indexOf(h);
+      if (k &gt;= 0) return keyVals[k];
+      return patch[h] !== undefined ? patch[h] : &#x27;&#x27;;
+    }));
+    return true;
+  }
+  head.forEach(function (h, i) {
+    if (patch[h] !== undefined) sheet.getRange(row, i + 1).setValue(patch[h]);
+  });
+  return true;
+}
+
+function audit(action, target, detail) {
+  try {
+    tab(&#x27;AuditLog&#x27;).appendRow([
+      new Date(), signedInEmail(), action, target, JSON.stringify(detail || {})
+    ]);
+  } catch (err) { /* never block a request on audit failure */ }
+}
+
+/* ============================================================
+   API — dispatched from Api.gs
+   ============================================================ */
+
+/* Actions that change data. After any of these succeed, the flat
+   Summary tab is rebuilt so the spreadsheet view is never stale. */
+var WRITE_ACTIONS = [&#x27;saveProject&#x27;, &#x27;deleteProject&#x27;, &#x27;saveStage&#x27;, &#x27;saveDocument&#x27;,
+                     &#x27;saveBoqLine&#x27;, &#x27;deleteBoqLine&#x27;, &#x27;saveRouting&#x27;];
+
+function apiCall(action, p) {
+  var result = apiDispatch(action, p);
+
+  if (WRITE_ACTIONS.indexOf(action) !== -1) {
+    try {
+      refreshSummary();
+    } catch (err) {
+      /* A formatting failure must never lose the user&#x27;s data. The write
+         has already committed; the hourly trigger will catch the tab up. */
+      audit(&#x27;summaryRefreshFailed&#x27;, action, { message: String(err) });
+    }
+  }
+
+  return result;
+}
+
+function apiDispatch(action, p) {
+  if (!currentUser()) throw new Error(&#x27;Your account is not registered on this system.&#x27;);
+  p = p || {};
+
+  switch (action) {
+
+    case &#x27;listProjects&#x27;:
+      return readAll(&#x27;Projects&#x27;).map(function (r) {
+        r.archived = String(r.archived).toLowerCase() === &#x27;true&#x27;
+                  || String(r.archived).toLowerCase() === &#x27;yes&#x27;;
+        r.value = Number(r.value) || 0;
+        r.module = Number(r.module) || 1;
+        r.advancePct = Number(r.advancePct) || 0;
+        r.balancePct = Number(r.balancePct) || 0;
+        return r;
+      });
+
+    case &#x27;saveProject&#x27;:
+      requireManage();
+      upsert(&#x27;Projects&#x27;, [&#x27;id&#x27;], [p.id], p);
+      audit(&#x27;saveProject&#x27;, p.id, p);
+      if (p.name &amp;&amp; findRow(&#x27;StageProgress&#x27;, [&#x27;projectId&#x27;], [p.id]) === -1) {
+        seedProject(p.id, p.type);
+      }
+      return true;
+
+    case &#x27;deleteProject&#x27;:
+      requireManage();
+      var pr = findRow(&#x27;Projects&#x27;, [&#x27;id&#x27;], [p.id]);
+      if (pr &gt; 0) tab(&#x27;Projects&#x27;).deleteRow(pr);
+      audit(&#x27;deleteProject&#x27;, p.id, {});
+      return true;
+
+    case &#x27;listStageProgress&#x27;:
+      return filterBy(&#x27;StageProgress&#x27;, p.projectId);
+
+    case &#x27;saveStage&#x27;:
+      requireStep(p.projectId, p.step);
+      upsert(&#x27;StageProgress&#x27;, [&#x27;projectId&#x27;, &#x27;step&#x27;], [p.projectId, p.step],
+             withStamp(p.patch));
+      audit(&#x27;saveStage&#x27;, p.projectId + &#x27;:&#x27; + p.step, p.patch);
+      return true;
+
+    case &#x27;listDocuments&#x27;:
+      return filterBy(&#x27;Documents&#x27;, p.projectId);
+
+    case &#x27;saveDocument&#x27;:
+      requireArea(&#x27;documents&#x27;, p.projectId);
+      upsert(&#x27;Documents&#x27;, [&#x27;projectId&#x27;, &#x27;name&#x27;], [p.projectId, p.name],
+             withStamp(p.patch));
+      audit(&#x27;saveDocument&#x27;, p.projectId + &#x27;:&#x27; + p.name, p.patch);
+      return true;
+
+    case &#x27;listBoq&#x27;:
+      return filterBy(&#x27;BOQ&#x27;, p.projectId);
+
+    case &#x27;saveBoqLine&#x27;:
+      requireArea(&#x27;payments&#x27;, p.projectId);
+      var line = Object.assign({ projectId: p.projectId }, p.line);
+      upsert(&#x27;BOQ&#x27;, [&#x27;projectId&#x27;, &#x27;id&#x27;], [p.projectId, p.line.id], line);
+      audit(&#x27;saveBoqLine&#x27;, p.projectId + &#x27;:&#x27; + p.line.id, p.line);
+      return true;
+
+    case &#x27;deleteBoqLine&#x27;:
+      requireArea(&#x27;payments&#x27;, p.projectId);
+      var br = findRow(&#x27;BOQ&#x27;, [&#x27;projectId&#x27;, &#x27;id&#x27;], [p.projectId, p.lineId]);
+      if (br &gt; 0) tab(&#x27;BOQ&#x27;).deleteRow(br);
+      audit(&#x27;deleteBoqLine&#x27;, p.projectId + &#x27;:&#x27; + p.lineId, {});
+      return true;
+
+    case &#x27;listRouting&#x27;:
+      return filterBy(&#x27;Routing&#x27;, p.projectId);
+
+    case &#x27;saveRouting&#x27;:
+      requireArea(&#x27;routing&#x27;, p.projectId);
+      upsert(&#x27;Routing&#x27;, [&#x27;projectId&#x27;, &#x27;tranche&#x27;, &#x27;stepNo&#x27;],
+             [p.projectId, p.tranche, p.stepNo], p.patch);
+      audit(&#x27;saveRouting&#x27;, p.projectId + &#x27;:&#x27; + p.tranche + &#x27;:&#x27; + p.stepNo, p.patch);
+      return true;
+
+    case &#x27;listUsers&#x27;:
+      return readAll(&#x27;Users&#x27;);
+
+    default:
+      throw new Error(&#x27;Unknown action: &#x27; + action);
+  }
+}
+
+function filterBy(sheetName, projectId) {
+  return readAll(sheetName).filter(function (r) {
+    return String(r.projectId) === String(projectId);
+  });
+}
+
+function withStamp(patch) {
+  var out = {};
+  Object.keys(patch || {}).forEach(function (k) { out[k] = patch[k]; });
+  out.updatedBy = signedInEmail();
+  out.updatedAt = new Date();
+  return out;
+}
+
+/* ============================================================
+   Permissions — mirrors the rules enforced in the interface.
+   The browser disables controls; this is what actually stops a
+   write. Never rely on the client alone.
+   ============================================================ */
+
+var FULL_EDIT_ROLES = [&#x27;Head of Projects &amp; Operations&#x27;, &#x27;IT Support&#x27;];
+
+var AREA_ROLES = {
+  stage:     [],
+  documents: [],
+  payments:  [],
+  routing:   [],
+  siteLog:   []
+};
+
+function requireManage() {
+  var u = currentUser();
+  if (!u || FULL_EDIT_ROLES.indexOf(u.role) === -1) {
+    throw new Error(&#x27;You do not have permission to create or archive projects.&#x27;);
+  }
+}
+
+/** Is the signed-in user the project manager on this project? */
+function isAssigned(projectId) {
+  var u = currentUser();
+  if (!u) return false;
+  var rows = readAll(&#x27;Projects&#x27;);
+  for (var i = 0; i &lt; rows.length; i++) {
+    if (String(rows[i].id) === String(projectId)) {
+      return String(rows[i].pm) === u.name;
+    }
+  }
+  return false;
+}
+
+/* ------------------------------------------------------------
+   Step-level ownership. The SOP already names a responsible role
+   against every one of the 64 steps; that column is the rule.
+   ------------------------------------------------------------ */
+
+var OWNER_TOKENS_SRV = {
+  &#x27;PM&#x27;:       [&#x27;Project Manager&#x27;],
+  &#x27;MD&#x27;:       [&#x27;Managing Director&#x27;],
+  &#x27;Admin&#x27;:    [&#x27;Project Manager&#x27;],
+  &#x27;Accounts&#x27;: [&#x27;Project Manager&#x27;],
+  &#x27;Engineer&#x27;: [&#x27;Project Manager&#x27;],
+  &#x27;Ministry&#x27;: [&#x27;Project Manager&#x27;]
+};
+
+var ASSIGNED_ONLY_SRV = [&#x27;Project Manager&#x27;];
+
+function stepOwnerToken(step) {
+  for (var i = 0; i &lt; STAGE_REFERENCE.length; i++) {
+    if (String(STAGE_REFERENCE[i][0]) === String(step)) return STAGE_REFERENCE[i][3];
+  }
+  return &#x27;&#x27;;
+}
+
+function requireStep(projectId, step) {
+  var u = currentUser();
+  if (!u) throw new Error(&#x27;Your account is not registered on this system.&#x27;);
+  if (FULL_EDIT_ROLES.indexOf(u.role) !== -1) return;
+
+  var token = stepOwnerToken(step);
+  var allowed = [];
+  String(token || &#x27;&#x27;).split(&#x27;/&#x27;).forEach(function (t) {
+    (OWNER_TOKENS_SRV[t.trim()] || []).forEach(function (r) {
+      if (allowed.indexOf(r) === -1) allowed.push(r);
+    });
+  });
+
+  if (allowed.indexOf(u.role) === -1) {
+    throw new Error(&#x27;Step &#x27; + step + &#x27; is recorded by &#x27; + (token || &#x27;another role&#x27;) +
+                    &#x27;. You cannot update it.&#x27;);
+  }
+  if (ASSIGNED_ONLY_SRV.indexOf(u.role) !== -1 &amp;&amp; !isAssigned(projectId)) {
+    throw new Error(&#x27;You are not assigned to this project.&#x27;);
+  }
+}
+
+function requireArea(area, projectId) {
+  var u = currentUser();
+  if (!u) throw new Error(&#x27;Your account is not registered on this system.&#x27;);
+
+  if (u.role === &#x27;Managing Director&#x27;) {
+    throw new Error(&#x27;Managing Director access is read-only.&#x27;);
+  }
+  if (FULL_EDIT_ROLES.indexOf(u.role) !== -1) return;
+  if ((AREA_ROLES[area] || []).indexOf(u.role) !== -1) return;
+  if (u.role === &#x27;Project Manager&#x27; &amp;&amp; isAssigned(projectId)) return;
+
+  throw new Error(&#x27;You do not have permission to change this section.&#x27;);
+}
+</pre></section><section class="pane" id="p1">
+  <div class="bar"><div class="meta"><b>Api.gs</b><span>181 lines · 5,696 characters</span>
+   <p>The endpoint. JSONP transport, session-token checks, action routing.</p>
+   <p class="dest">In Apps Script: <b>+ → Script</b>, name it <code>Api</code> — no extension.</p></div>
+   <button class="copy" onclick="cp(1,this)">Copy all</button></div>
+  <pre id="c1">/**
+ * ZONEXA — HTTP endpoint
+ * Zoneware Limited · Project Tracking System
+ *
+ * The only file the Vercel site talks to.
+ *
+ *   zonexaa.vercel.app  ──▶  this Web App  ──▶  Google Sheet
+ *
+ * ---------------------------------------------------------------
+ * Transport
+ * ---------------------------------------------------------------
+ * Apps Script cannot set response headers, so it can never send
+ * Access-Control-Allow-Origin and can never answer a CORS preflight.
+ * Rather than fight that, the front end does not use fetch at all.
+ * It loads a &lt;script&gt; tag pointing at this endpoint and reads the
+ * answer through a callback — JSONP. Script tags have never been
+ * subject to the same-origin policy, so CORS simply does not apply.
+ *
+ * That makes doGet the main entry point. doPost is kept for anything
+ * too large for a URL, and for testing with curl.
+ *
+ * ---------------------------------------------------------------
+ * Identity
+ * ---------------------------------------------------------------
+ * Username and password, held on the Users tab. See Auth.gs.
+ * A successful login returns a session token lasting 12 hours; every
+ * later request carries it. No Google account, no OAuth client, no
+ * authorised origins to maintain.
+ *
+ * ---------------------------------------------------------------
+ * Deployment
+ * ---------------------------------------------------------------
+ *   Deploy &gt; New deployment &gt; Web app
+ *     Execute as     : Me
+ *     Who has access : Anyone
+ *
+ * &quot;Anyone&quot; is required and is not negotiable. The request arrives
+ * from a Vercel page with no Google session attached, so Google
+ * cannot identify the caller at the door. Set it to anything else
+ * and Google answers with a login page instead of your data.
+ *
+ * Access is not open. Every action except &#x27;login&#x27; and &#x27;ping&#x27; is
+ * refused without a valid session token, and login itself is refused
+ * without a correct password. The door is unlocked; the guard is
+ * inside.
+ */
+
+/* Actions permitted without a session token */
+var PUBLIC_ACTIONS = [&#x27;ping&#x27;, &#x27;login&#x27;];
+
+/* ============================================================
+   Entry points
+   ============================================================ */
+
+function doGet(e) {
+  var p = (e &amp;&amp; e.parameter) || {};
+  var payload = {};
+  try {
+    payload = p.payload ? JSON.parse(p.payload) : {};
+  } catch (err) {
+    return json({ error: &#x27;Malformed payload.&#x27; }, p.callback);
+  }
+  return handle(p.action, payload, p.token, p.callback);
+}
+
+function doPost(e) {
+  var body = {};
+  try {
+    body = JSON.parse((e &amp;&amp; e.postData &amp;&amp; e.postData.contents) || &#x27;{}&#x27;);
+  } catch (err) {
+    return json({ error: &#x27;Malformed request.&#x27; });
+  }
+  var cb = (e &amp;&amp; e.parameter &amp;&amp; e.parameter.callback) || body.callback;
+  return handle(body.action, body.payload, body.token, cb);
+}
+
+/* ============================================================
+   Request handling
+   ============================================================ */
+
+function handle(action, payload, token, callback) {
+  payload = payload || {};
+
+  try {
+    if (!action) throw new Error(&#x27;No action supplied.&#x27;);
+
+    /* ---- open actions ---- */
+
+    if (action === &#x27;ping&#x27;) {
+      return json({
+        data: {
+          service: &#x27;Zonexa API&#x27;,
+          status: &#x27;up&#x27;,
+          auth: &#x27;username/password&#x27;,
+          time: new Date().toISOString()
+        }
+      }, callback);
+    }
+
+    if (action === &#x27;login&#x27;) {
+      var lr = login(payload.username, payload.password);
+      audit(&#x27;login&#x27;, lr.user.email, { role: lr.user.role });
+      return json({ data: lr }, callback);
+    }
+
+    /* ---- everything below needs a valid session ---- */
+
+    var email = emailForToken(token);
+    if (!email) {
+      return json({
+        error: &#x27;Your session has ended. Sign in again.&#x27;,
+        authFailed: true
+      }, callback);
+    }
+
+    REQUEST_EMAIL = email;
+
+    var u = currentUser();
+    if (!u) {
+      return json({
+        error: email + &#x27; is no longer an active user on this system.&#x27;,
+        authFailed: true
+      }, callback);
+    }
+
+    if (action === &#x27;whoami&#x27;)  return json({ data: u }, callback);
+    if (action === &#x27;logout&#x27;)  return json({ data: revokeToken(token) }, callback);
+
+    if (action === &#x27;changePassword&#x27;) {
+      return json({
+        data: changePassword(payload.currentPassword, payload.newPassword)
+      }, callback);
+    }
+
+    if (action === &#x27;adminSetPassword&#x27;) {
+      return json({
+        data: adminSetPassword(payload.email, payload.password)
+      }, callback);
+    }
+
+    /* ---- project data ---- */
+
+    var needsLock = WRITE_ACTIONS.indexOf(action) !== -1;
+    var lock = null;
+
+    if (needsLock) {
+      lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+    }
+    try {
+      return json({ data: apiCall(action, payload) }, callback);
+    } finally {
+      if (lock) { try { lock.releaseLock(); } catch (ignore) {} }
+    }
+
+  } catch (err) {
+    return json({ error: String(err &amp;&amp; err.message || err) }, callback);
+  } finally {
+    REQUEST_EMAIL = &#x27;&#x27;;
+  }
+}
+
+/* ============================================================
+   Response
+   ============================================================ */
+
+function json(obj, callback) {
+  var text = JSON.stringify(obj);
+  if (callback) {
+    /* Only allow a plain identifier as the callback name, so the
+       response can never be turned into arbitrary script. */
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(callback)) callback = &#x27;zxcb&#x27;;
+    return ContentService
+      .createTextOutput(callback + &#x27;(&#x27; + text + &#x27;);&#x27;)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService
+    .createTextOutput(text)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+</pre></section><section class="pane" id="p2">
+  <div class="bar"><div class="meta"><b>Auth.gs</b><span>313 lines · 10,404 characters</span>
+   <p>Username/password. Salted SHA-256 hashing, sessions, lockout, password resets.</p>
+   <p class="dest">In Apps Script: <b>+ → Script</b>, name it <code>Auth</code> — no extension.</p></div>
+   <button class="copy" onclick="cp(2,this)">Copy all</button></div>
+  <pre id="c2">/**
+ * ZONEXA — Username and password authentication
+ * Zoneware Limited
+ *
+ * Credentials live on the Users tab of the workbook. Passwords are never
+ * stored. What is stored is a SHA-256 hash of (salt + password), and the
+ * salt is different for every user, so two people with the same password
+ * have different hashes and a leaked sheet reveals nothing usable.
+ *
+ * A successful login issues a session token that lasts 12 hours. The
+ * browser holds the token; every later request carries it. Tokens live on
+ * the Sessions tab and can be revoked by deleting the row.
+ *
+ * Users tab columns:
+ *   id · name · email · role · active · username · salt · hash
+ *   mustChangePassword · lastLogin · loginCount · createdAt
+ */
+
+var SESSION_HOURS = 12;
+
+/* ============================================================
+   Hashing
+   ============================================================ */
+
+function makeSalt() {
+  return Utilities.getUuid().replace(/-/g, &#x27;&#x27;);
+}
+
+function hashPassword(password, salt) {
+  var raw = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(salt) + String(password),
+    Utilities.Charset.UTF_8);
+  return raw.map(function (b) {
+    return (&#x27;0&#x27; + (b &amp; 0xff).toString(16)).slice(-2);
+  }).join(&#x27;&#x27;);
+}
+
+/** Comparison that does not leak length or position through timing. */
+function safeEquals(a, b) {
+  a = String(a || &#x27;&#x27;); b = String(b || &#x27;&#x27;);
+  if (a.length !== b.length) return false;
+  var diff = 0;
+  for (var i = 0; i &lt; a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/* ============================================================
+   Login
+   ============================================================ */
+
+/**
+ * Accepts a username or an email address, plus a password.
+ * Returns { token, user } or throws with a message safe to show.
+ */
+function login(username, password) {
+  username = String(username || &#x27;&#x27;).trim().toLowerCase();
+  password = String(password || &#x27;&#x27;);
+
+  if (!username || !password) {
+    throw new Error(&#x27;Enter your username and password.&#x27;);
+  }
+
+  if (isLockedOut(username)) {
+    throw new Error(&#x27;Too many failed attempts. Try again in 15 minutes.&#x27;);
+  }
+
+  var rows = readAll(&#x27;Users&#x27;);
+  var found = null, rowIndex = -1;
+
+  for (var i = 0; i &lt; rows.length; i++) {
+    var u = rows[i];
+    var un = String(u.username || &#x27;&#x27;).trim().toLowerCase();
+    var em = String(u.email || &#x27;&#x27;).trim().toLowerCase();
+    if (un === username || em === username) { found = u; rowIndex = i + 2; break; }
+  }
+
+  /* Same message whether the account is missing or the password is wrong.
+     Telling someone the username exists is half the work done for them. */
+  var refusal = &#x27;Username or password is incorrect.&#x27;;
+
+  if (!found) { recordFailure(username); throw new Error(refusal); }
+
+  if (String(found.active).toLowerCase() === &#x27;no&#x27;) {
+    throw new Error(&#x27;This account has been disabled. Contact the administrator.&#x27;);
+  }
+  if (!found.hash) {
+    throw new Error(&#x27;No password has been set for this account. Contact the administrator.&#x27;);
+  }
+  if (!safeEquals(hashPassword(password, found.salt), String(found.hash))) {
+    recordFailure(username);
+    throw new Error(refusal);
+  }
+
+  clearFailures(username);
+  stampLogin(rowIndex, rows, found);
+
+  var token = issueToken(found.email || found.username);
+
+  return {
+    token: token,
+    user: {
+      id: found.id,
+      name: found.name,
+      email: found.email,
+      username: found.username,
+      role: found.role,
+      mustChangePassword: String(found.mustChangePassword).toLowerCase() === &#x27;yes&#x27;
+    }
+  };
+}
+
+function stampLogin(rowIndex, rows, user) {
+  try {
+    var sheet = tab(&#x27;Users&#x27;);
+    var head = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var cLast = head.indexOf(&#x27;lastLogin&#x27;) + 1;
+    var cCount = head.indexOf(&#x27;loginCount&#x27;) + 1;
+    if (cLast &gt; 0) sheet.getRange(rowIndex, cLast).setValue(new Date());
+    if (cCount &gt; 0) sheet.getRange(rowIndex, cCount).setValue((Number(user.loginCount) || 0) + 1);
+  } catch (err) { /* a stamp must never block a login */ }
+}
+
+/* ============================================================
+   Brute-force slowdown
+   ============================================================ */
+
+function failKey(username) { return &#x27;fail_&#x27; + username; }
+
+function isLockedOut(username) {
+  var n = Number(CacheService.getScriptCache().get(failKey(username)) || 0);
+  return n &gt;= 6;
+}
+
+function recordFailure(username) {
+  var cache = CacheService.getScriptCache();
+  var n = Number(cache.get(failKey(username)) || 0) + 1;
+  cache.put(failKey(username), String(n), 900);   // 15 minutes
+}
+
+function clearFailures(username) {
+  CacheService.getScriptCache().remove(failKey(username));
+}
+
+/* ============================================================
+   Sessions
+   ============================================================ */
+
+function issueToken(email) {
+  var token = Utilities.getUuid().replace(/-/g, &#x27;&#x27;) +
+              Utilities.getUuid().replace(/-/g, &#x27;&#x27;).slice(0, 16);
+  var expires = new Date(Date.now() + SESSION_HOURS * 3600 * 1000);
+
+  tab(&#x27;Sessions&#x27;).appendRow([token, email, new Date(), expires]);
+  CacheService.getScriptCache().put(&#x27;sess_&#x27; + token, email, 21600);   // 6 h
+
+  if (Math.random() &lt; 0.1) purgeSessions();
+  return token;
+}
+
+/** Returns the email behind a token, or &#x27;&#x27; if it is unknown or expired. */
+function emailForToken(token) {
+  if (!token) return &#x27;&#x27;;
+
+  var cached = CacheService.getScriptCache().get(&#x27;sess_&#x27; + token);
+  if (cached) return cached;
+
+  var rows = readAll(&#x27;Sessions&#x27;);
+  for (var i = 0; i &lt; rows.length; i++) {
+    if (String(rows[i].token) === String(token)) {
+      var exp = new Date(rows[i].expires);
+      if (isNaN(exp.getTime()) || exp &lt; new Date()) return &#x27;&#x27;;
+      CacheService.getScriptCache().put(&#x27;sess_&#x27; + token, String(rows[i].email), 21600);
+      return String(rows[i].email);
+    }
+  }
+  return &#x27;&#x27;;
+}
+
+function revokeToken(token) {
+  CacheService.getScriptCache().remove(&#x27;sess_&#x27; + token);
+  var r = findRow(&#x27;Sessions&#x27;, [&#x27;token&#x27;], [token]);
+  if (r &gt; 0) tab(&#x27;Sessions&#x27;).deleteRow(r);
+  return true;
+}
+
+/** Deletes expired rows so the tab does not grow forever. */
+function purgeSessions() {
+  try {
+    var sheet = tab(&#x27;Sessions&#x27;);
+    var values = sheet.getDataRange().getValues();
+    var now = new Date();
+    for (var r = values.length - 1; r &gt;= 1; r--) {
+      var exp = new Date(values[r][3]);
+      if (!isNaN(exp.getTime()) &amp;&amp; exp &lt; now) sheet.deleteRow(r + 1);
+    }
+  } catch (err) { /* housekeeping only */ }
+}
+
+/* ============================================================
+   Password management
+   ============================================================ */
+
+/** The signed-in user changes their own password. */
+function changePassword(currentPassword, newPassword) {
+  var u = currentUser();
+  if (!u) throw new Error(&#x27;Not signed in.&#x27;);
+  if (String(newPassword || &#x27;&#x27;).length &lt; 8) {
+    throw new Error(&#x27;New password must be at least 8 characters.&#x27;);
+  }
+
+  var rows = readAll(&#x27;Users&#x27;);
+  for (var i = 0; i &lt; rows.length; i++) {
+    if (String(rows[i].email).toLowerCase() === String(u.email).toLowerCase()) {
+      if (!safeEquals(hashPassword(currentPassword, rows[i].salt), String(rows[i].hash))) {
+        throw new Error(&#x27;Your current password is incorrect.&#x27;);
+      }
+      writeCredentials(i + 2, newPassword, &#x27;No&#x27;);
+      audit(&#x27;changePassword&#x27;, u.email, {});
+      return true;
+    }
+  }
+  throw new Error(&#x27;Account not found.&#x27;);
+}
+
+/**
+ * An administrator sets someone&#x27;s password. Only the two full-edit roles
+ * may do this, and the user is forced to change it at next sign-in.
+ */
+function adminSetPassword(targetEmail, newPassword) {
+  var u = currentUser();
+  if (!u || FULL_EDIT_ROLES.indexOf(u.role) === -1) {
+    throw new Error(&#x27;You do not have permission to reset passwords.&#x27;);
+  }
+  if (String(newPassword || &#x27;&#x27;).length &lt; 8) {
+    throw new Error(&#x27;Password must be at least 8 characters.&#x27;);
+  }
+
+  var rows = readAll(&#x27;Users&#x27;);
+  for (var i = 0; i &lt; rows.length; i++) {
+    if (String(rows[i].email).toLowerCase() === String(targetEmail).toLowerCase()) {
+      writeCredentials(i + 2, newPassword, &#x27;Yes&#x27;);
+      audit(&#x27;adminSetPassword&#x27;, targetEmail, {});
+      return true;
+    }
+  }
+  throw new Error(&#x27;No user with that address.&#x27;);
+}
+
+function writeCredentials(rowIndex, password, mustChange) {
+  var sheet = tab(&#x27;Users&#x27;);
+  var head = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var salt = makeSalt();
+
+  var set = function (col, value) {
+    var c = head.indexOf(col) + 1;
+    if (c &gt; 0) sheet.getRange(rowIndex, c).setValue(value);
+  };
+
+  set(&#x27;salt&#x27;, salt);
+  set(&#x27;hash&#x27;, hashPassword(password, salt));
+  set(&#x27;mustChangePassword&#x27;, mustChange);
+}
+
+/* ============================================================
+   First-run setup — run this once from the editor
+   ============================================================ */
+
+/**
+ * Gives every user on the Users tab a starting password and prints the
+ * list once, in the execution log. Copy it, hand the credentials out,
+ * then never look at it again — the passwords are not recoverable
+ * afterwards, only resettable.
+ */
+function generateStartingPasswords() {
+  var sheet = tab(&#x27;Users&#x27;);
+  var rows = readAll(&#x27;Users&#x27;);
+  var out = [];
+
+  rows.forEach(function (u, i) {
+    if (!u.email) return;
+    var username = String(u.username || &#x27;&#x27;).trim() ||
+                   String(u.email).split(&#x27;@&#x27;)[0].toLowerCase();
+    var password = randomPassword();
+
+    var head = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var cUser = head.indexOf(&#x27;username&#x27;) + 1;
+    if (cUser &gt; 0) sheet.getRange(i + 2, cUser).setValue(username);
+
+    writeCredentials(i + 2, password, &#x27;Yes&#x27;);
+    out.push([u.name, username, password, u.role].join(&#x27;   |   &#x27;));
+  });
+
+  Logger.log(&#x27;\n=== ZONEXA STARTING CREDENTIALS ===\n&#x27; +
+             &#x27;Name | Username | Password | Role\n&#x27; +
+             out.join(&#x27;\n&#x27;) +
+             &#x27;\n\nHand these out, then delete this log. &#x27; +
+             &#x27;Everyone is forced to change their password at first sign-in.&#x27;);
+  return out;
+}
+
+function randomPassword() {
+  /* No l, I, 1, O, 0 — they get misread when typed off a phone screen */
+  var chars = &#x27;ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789&#x27;;
+  var s = &#x27;&#x27;;
+  for (var i = 0; i &lt; 10; i++) {
+    s += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return &#x27;ZW-&#x27; + s;
+}
+</pre></section><section class="pane" id="p3">
+  <div class="bar"><div class="meta"><b>Setup.gs</b><span>172 lines · 7,135 characters</span>
+   <p>Run setupZonexa() once, then generateStartingPasswords() once.</p>
+   <p class="dest">In Apps Script: <b>+ → Script</b>, name it <code>Setup</code> — no extension.</p></div>
+   <button class="copy" onclick="cp(3,this)">Copy all</button></div>
+  <pre id="c3">/**
+ * ZONEXA — one-off workbook setup
+ * Zoneware Limited
+ *
+ * Run setupZonexa() once from the Apps Script editor. It creates every
+ * tab with the correct headers and seeds the reference data.
+ * Running it again will not duplicate tabs that already exist.
+ */
+
+function setupZonexa() {
+  var book = SpreadsheetApp.getActiveSpreadsheet();
+
+  var schema = {
+    &#x27;Projects&#x27;: [&#x27;id&#x27;,&#x27;name&#x27;,&#x27;client&#x27;,&#x27;sector&#x27;,&#x27;type&#x27;,&#x27;pm&#x27;,&#x27;engineer&#x27;,&#x27;value&#x27;,&#x27;awardDate&#x27;,
+                 &#x27;module&#x27;,&#x27;status&#x27;,&#x27;advance&#x27;,&#x27;balance&#x27;,&#x27;completion&#x27;,&#x27;location&#x27;,
+                 &#x27;advancePct&#x27;,&#x27;balancePct&#x27;,&#x27;note&#x27;,&#x27;archived&#x27;,&#x27;archiveReason&#x27;,
+                 &#x27;archivedBy&#x27;,&#x27;archivedAt&#x27;,&#x27;createdBy&#x27;,&#x27;createdAt&#x27;,
+                 &#x27;updatedBy&#x27;,&#x27;updatedAt&#x27;],
+
+    &#x27;StageProgress&#x27;: [&#x27;projectId&#x27;,&#x27;step&#x27;,&#x27;module&#x27;,&#x27;task&#x27;,&#x27;role&#x27;,&#x27;status&#x27;,
+                      &#x27;target&#x27;,&#x27;actual&#x27;,&#x27;evidence&#x27;,&#x27;notes&#x27;,&#x27;updatedBy&#x27;,&#x27;updatedAt&#x27;],
+
+    &#x27;Documents&#x27;: [&#x27;projectId&#x27;,&#x27;section&#x27;,&#x27;name&#x27;,&#x27;tranche&#x27;,&#x27;status&#x27;,&#x27;link&#x27;,
+                  &#x27;obtained&#x27;,&#x27;notes&#x27;,&#x27;updatedBy&#x27;,&#x27;updatedAt&#x27;],
+
+    &#x27;BOQ&#x27;: [&#x27;projectId&#x27;,&#x27;id&#x27;,&#x27;name&#x27;,&#x27;value&#x27;,&#x27;taxRate&#x27;,&#x27;marginRate&#x27;,&#x27;vendor&#x27;,&#x27;notes&#x27;],
+
+    &#x27;Routing&#x27;: [&#x27;projectId&#x27;,&#x27;tranche&#x27;,&#x27;stepNo&#x27;,&#x27;name&#x27;,&#x27;status&#x27;,&#x27;date&#x27;,
+                &#x27;lastVisited&#x27;,&#x27;notes&#x27;],
+
+    &#x27;Users&#x27;: [&#x27;id&#x27;,&#x27;name&#x27;,&#x27;email&#x27;,&#x27;role&#x27;,&#x27;active&#x27;,&#x27;username&#x27;,&#x27;salt&#x27;,&#x27;hash&#x27;,
+              &#x27;mustChangePassword&#x27;,&#x27;lastLogin&#x27;,&#x27;loginCount&#x27;,&#x27;createdAt&#x27;],
+
+    &#x27;Sessions&#x27;: [&#x27;token&#x27;,&#x27;email&#x27;,&#x27;issued&#x27;,&#x27;expires&#x27;],
+
+    &#x27;CompanyDocs&#x27;: [&#x27;name&#x27;,&#x27;status&#x27;,&#x27;obtained&#x27;,&#x27;expiry&#x27;,&#x27;link&#x27;,&#x27;notes&#x27;],
+
+    &#x27;DeductionRates&#x27;: [&#x27;fee&#x27;,&#x27;rate&#x27;,&#x27;authority&#x27;,&#x27;atSource&#x27;,&#x27;ministry&#x27;],
+
+    &#x27;AuditLog&#x27;: [&#x27;timestamp&#x27;,&#x27;user&#x27;,&#x27;action&#x27;,&#x27;target&#x27;,&#x27;detail&#x27;]
+  };
+
+  Object.keys(schema).forEach(function (name) {
+    var sheet = book.getSheetByName(name);
+    if (!sheet) sheet = book.insertSheet(name);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(schema[name]);
+    }
+    var head = sheet.getRange(1, 1, 1, schema[name].length);
+    head.setFontWeight(&#x27;bold&#x27;)
+        .setBackground(&#x27;#0a0a0a&#x27;)
+        .setFontColor(&#x27;#ffffff&#x27;);
+    sheet.setFrozenRows(1);
+  });
+
+  seedRates(book);
+  seedUsers(book);
+  protectCredentialColumns(book);
+  refreshSummary();
+  installSummaryTrigger();
+
+  SpreadsheetApp.getUi().alert(
+    &#x27;Zonexa workbook ready.\n\n&#x27; +
+    &#x27;Next: Deploy &gt; New deployment &gt; Web app\n&#x27; +
+    &#x27;  Execute as     : Me\n&#x27; +
+    &#x27;  Who has access : Anyone\n\n&#x27; +
+    &#x27;&quot;Anyone&quot; is required because the request arrives from the Vercel\n&#x27; +
+    &#x27;site, not from a signed-in Google session. Api.gs still refuses\n&#x27; +
+    &#x27;every action except ping and login without a valid session token.\n\n&#x27; +
+    &#x27;THEN run generateStartingPasswords() once and copy the list out of\n&#x27; +
+    &#x27;the execution log. That is the only time the passwords are visible.\n\n&#x27; +
+    &#x27;Then paste the Web App URL into CONFIG.API_URL in js/config.js\n&#x27; +
+    &#x27;and push to GitHub.\n\n&#x27; +
+    &#x27;A tab called Summary has also been created. It rebuilds itself\n&#x27; +
+    &#x27;every time the dashboard is saved — one row per project. Read it,\n&#x27; +
+    &#x27;filter it, print it, but do not type into it.\n\n&#x27; +
+    &#x27;Test it first: open &lt;WEB_APP_URL&gt;?action=ping in a browser.&#x27;
+  );
+}
+
+function seedRates(book) {
+  var sheet = book.getSheetByName(&#x27;DeductionRates&#x27;);
+  if (sheet.getLastRow() &gt; 1) return;
+  [
+    [&#x27;Agreement Fee&#x27;,         0.0050, &#x27;Ministry of Justice&#x27;,            &#x27;Yes&#x27;, &#x27;All&#x27;],
+    [&#x27;Administrative Fee&#x27;,    0.0025, &#x27;Public Procurement Agency&#x27;,      &#x27;Yes&#x27;, &#x27;All&#x27;],
+    [&#x27;FIRS VAT&#x27;,              0.0750, &#x27;Federal Inland Revenue Service&#x27;, &#x27;No&#x27;,  &#x27;All&#x27;],
+    [&#x27;LIRS WHT&#x27;,              0.0500, &#x27;Lagos Internal Revenue Service&#x27;, &#x27;No&#x27;,  &#x27;All&#x27;],
+    [&#x27;Stamp Duty&#x27;,            0.0100, &#x27;Statutory Stamp Duty&#x27;,           &#x27;No&#x27;,  &#x27;All&#x27;],
+    [&#x27;LIRS Development Levy&#x27;, 0.0100, &#x27;Lagos State Development Levy&#x27;,   &#x27;No&#x27;,  &#x27;All&#x27;],
+    [&#x27;Ministry Variable A&#x27;,   0.0000, &#x27;Set per ministry&#x27;,               &#x27;No&#x27;,  &#x27;&#x27;],
+    [&#x27;Ministry Variable B&#x27;,   0.0000, &#x27;Set per ministry&#x27;,               &#x27;No&#x27;,  &#x27;&#x27;]
+  ].forEach(function (r) { sheet.appendRow(r); });
+}
+
+function seedUsers(book) {
+  var sheet = book.getSheetByName(&#x27;Users&#x27;);
+  if (sheet.getLastRow() &gt; 1) return;
+  [
+    [&#x27;U-01&#x27;,&#x27;Dile Ipinmoroti&#x27;,&#x27;dile@redwarelimited.com&#x27;,&#x27;Managing Director&#x27;,&#x27;Yes&#x27;,&#x27;dile&#x27;],
+    [&#x27;U-02&#x27;,&#x27;Oluwatoyin Bada&#x27;,&#x27;oluwatoyin@redwarelimited.com&#x27;,&#x27;Head of Projects &amp; Operations&#x27;,&#x27;Yes&#x27;,&#x27;toyin&#x27;],
+    [&#x27;U-03&#x27;,&#x27;Olutimehin Daniel Gbenga&#x27;,&#x27;operations@redwarelimited.com&#x27;,&#x27;IT Support&#x27;,&#x27;Yes&#x27;,&#x27;daniel&#x27;],
+    [&#x27;U-04&#x27;,&#x27;Roseline Adeyemi&#x27;,&#x27;roseline@redwarelimited.com&#x27;,&#x27;Project Manager&#x27;,&#x27;Yes&#x27;,&#x27;roseline&#x27;],
+    [&#x27;U-05&#x27;,&#x27;Rokibat Adeyemo&#x27;,&#x27;rokibat@redwarelimited.com&#x27;,&#x27;Project Manager&#x27;,&#x27;Yes&#x27;,&#x27;rokibat&#x27;],
+    [&#x27;U-06&#x27;,&#x27;Seyifunmi Alabi&#x27;,&#x27;seyifunmi@redwarelimited.com&#x27;,&#x27;Project Manager&#x27;,&#x27;Yes&#x27;,&#x27;seyifunmi&#x27;]
+    /* Accounts, Admin and Site Engineers are not issued logins in this
+       release. Their information reaches the system through the
+       Project Manager assigned to the project. */
+  ].forEach(function (r) { sheet.appendRow(r); });
+}
+
+/**
+ * Creates the 64 stage rows and the applicable document rows for a project.
+ * Call after adding a project to the Projects tab.
+ */
+function seedProject(projectId, contractType) {
+  var wb = SpreadsheetApp.getActiveSpreadsheet();
+  var stage = wb.getSheetByName(&#x27;StageProgress&#x27;);
+  var docs  = wb.getSheetByName(&#x27;Documents&#x27;);
+
+  var stageRows = STAGE_REFERENCE.map(function (s) {
+    return [projectId, s[0], s[1], s[2], s[3], &#x27;Not Started&#x27;, &#x27;&#x27;, &#x27;&#x27;, &#x27;&#x27;, &#x27;&#x27;, &#x27;&#x27;, &#x27;&#x27;];
+  });
+  if (stageRows.length) {
+    stage.getRange(stage.getLastRow() + 1, 1, stageRows.length, stageRows[0].length)
+         .setValues(stageRows);
+  }
+
+  var docRows = [];
+  DOC_REFERENCE.forEach(function (d) {
+    if (d[0] === &#x27;C&#x27;) return;                                    // entity level
+    if (d[0] === &#x27;E&#x27; &amp;&amp; contractType !== &#x27;Facility Management&#x27;) return;
+    docRows.push([projectId, d[0], d[1], d[2], &#x27;Not Started&#x27;, &#x27;&#x27;, &#x27;&#x27;, &#x27;&#x27;, &#x27;&#x27;, &#x27;&#x27;]);
+  });
+  if (docRows.length) {
+    docs.getRange(docs.getLastRow() + 1, 1, docRows.length, docRows[0].length)
+        .setValues(docRows);
+  }
+}
+
+/* Reference arrays are held in Reference.gs */
+
+
+/**
+ * Hides the salt and hash columns and warns anyone who opens the tab.
+ * Hiding is presentational, not security — anyone with edit access to
+ * the workbook can unhide them. The real protection is that a hash is
+ * not a password and cannot be turned back into one.
+ */
+function protectCredentialColumns(book) {
+  try {
+    var sheet = book.getSheetByName(&#x27;Users&#x27;);
+    var head = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    [&#x27;salt&#x27;, &#x27;hash&#x27;].forEach(function (name) {
+      var c = head.indexOf(name) + 1;
+      if (c &gt; 0) {
+        sheet.hideColumns(c);
+        sheet.getRange(1, c).setNote(
+          &#x27;Set by the system. Do not edit by hand — it will lock the user out. &#x27; +
+          &#x27;Use adminSetPassword() or the reset in the dashboard.&#x27;);
+      }
+    });
+
+    var sess = book.getSheetByName(&#x27;Sessions&#x27;);
+    if (sess) {
+      sess.getRange(&#x27;A1&#x27;).setNote(
+        &#x27;Live sign-in sessions. Delete a row to sign that person out immediately. &#x27; +
+        &#x27;Expired rows are cleared automatically.&#x27;);
+    }
+  } catch (err) { /* cosmetic only */ }
+}
+</pre></section><section class="pane" id="p4">
+  <div class="bar"><div class="meta"><b>Reference.gs</b><span>144 lines · 10,514 characters</span>
+   <p>The 64 SOP steps and 65 documents. Data only.</p>
+   <p class="dest">In Apps Script: <b>+ → Script</b>, name it <code>Reference</code> — no extension.</p></div>
+   <button class="copy" onclick="cp(4,this)">Copy all</button></div>
+  <pre id="c4">/**
+ * ZONEXA — Reference data
+ * Zoneware Limited
+ *
+ * Derived from the Project Management SOP, Version 1, September 2026.
+ * STAGE_REFERENCE: [step, module, task, responsible]
+ * DOC_REFERENCE:   [section, document name, tranche]
+ */
+
+var STAGE_REFERENCE = [
+  [&quot;1.1&quot;, 1, &quot;Extract approved annual capital expenditure budgets (Lagos State MDAs + Federal ministries)&quot;, &quot;PM&quot;],
+  [&quot;1.2&quot;, 1, &quot;Present MDA targeting recommendation at the Annual Strategy Call&quot;, &quot;PM / MD&quot;],
+  [&quot;2.1&quot;, 2, &quot;Tender identified (selective invitation received OR opportunity flagged on PPA Portal)&quot;, &quot;PM&quot;],
+  [&quot;2.2&quot;, 2, &quot;Lead Project Manager formally assigned by MD&quot;, &quot;MD&quot;],
+  [&quot;2.3&quot;, 2, &quot;Bid submission approach confirmed and approved by MD&quot;, &quot;MD&quot;],
+  [&quot;2.4&quot;, 2, &quot;Company PPA registration and tax profile verified for the contract class&quot;, &quot;PM / Admin&quot;],
+  [&quot;2.5&quot;, 2, &quot;Payment Advice collected from MDA Accounts Unit&quot;, &quot;PM&quot;],
+  [&quot;2.6&quot;, 2, &quot;Bid document purchase fee paid via Payer ID; teller/receipt obtained&quot;, &quot;Accounts&quot;],
+  [&quot;2.7&quot;, 2, &quot;Technical specifications &amp; unpriced BOQ acquired&quot;, &quot;PM&quot;],
+  [&quot;2.8&quot;, 2, &quot;Bid Bond secured via LASACO Assurance&quot;, &quot;Admin&quot;],
+  [&quot;2.9&quot;, 2, &quot;Full bid document package assembled (Reference A — 11 items)&quot;, &quot;PM / Admin&quot;],
+  [&quot;2.10&quot;, 2, &quot;Tender uploaded to PPA Portal + physical package submitted to Ministerial Procurement Unit&quot;, &quot;PM&quot;],
+  [&quot;2.11&quot;, 2, &quot;E-procurement acknowledgment email received &amp; filed&quot;, &quot;PM&quot;],
+  [&quot;2.12&quot;, 2, &quot;Evaluation tracked with Ministerial Procurement Unit through to Notification of Award&quot;, &quot;PM&quot;],
+  [&quot;3.1&quot;, 3, &quot;Notification / Letter of Award followed up and collected&quot;, &quot;PM&quot;],
+  [&quot;3.2&quot;, 3, &quot;Formal Letter of Acceptance submitted on company letterhead&quot;, &quot;Admin&quot;],
+  [&quot;3.3&quot;, 3, &quot;Letter of Authorization (LASG/STO statutory deduction at source) submitted&quot;, &quot;Admin&quot;],
+  [&quot;3.4&quot;, 3, &quot;Evidence of tax &amp; stamp duty payment submitted&quot;, &quot;Accounts&quot;],
+  [&quot;3.5&quot;, 3, &quot;Letter of Request for Advance Payment submitted to Head of Procurement&quot;, &quot;Admin&quot;],
+  [&quot;3.6&quot;, 3, &quot;Banking details, Tax Clearance Certificate &amp; Director ID submitted&quot;, &quot;Accounts&quot;],
+  [&quot;3.7&quot;, 3, &quot;Advance Payment Guarantee (APG) &amp; Performance Bond obtained via LASACO&quot;, &quot;Admin&quot;],
+  [&quot;3.8&quot;, 3, &quot;Undated company security cheque executed for mobilization sum&quot;, &quot;Accounts&quot;],
+  [&quot;3.9&quot;, 3, &quot;Full payment file submitted to Ministry Accounts&quot;, &quot;Admin&quot;],
+  [&quot;3.10&quot;, 3, &quot;Payment Voucher raised by Ministry Accounts&quot;, &quot;Ministry&quot;],
+  [&quot;3.11&quot;, 3, &quot;Resident Internal Audit compliance check passed&quot;, &quot;Ministry&quot;],
+  [&quot;3.12&quot;, 3, &quot;Permanent Secretary / Executive sign-off obtained&quot;, &quot;Ministry&quot;],
+  [&quot;3.13&quot;, 3, &quot;Central Internal Audit (CIA) clearance obtained&quot;, &quot;Ministry&quot;],
+  [&quot;3.14&quot;, 3, &quot;Advance Payment received from State Treasury Office (STO)&quot;, &quot;Accounts&quot;],
+  [&quot;4.1&quot;, 4, &quot;Awarded drawings, BOQ &amp; specifications reviewed against tender documents&quot;, &quot;PM / Engineer&quot;],
+  [&quot;4.2&quot;, 4, &quot;Project-specific risks identified with mitigation notes&quot;, &quot;PM / Engineer&quot;],
+  [&quot;4.3&quot;, 4, &quot;Feasibility check run on awarded timeline &amp; budget&quot;, &quot;PM / Engineer&quot;],
+  [&quot;4.4&quot;, 4, &quot;Project plan &amp; execution timeline developed; labor/machinery/materials allocated&quot;, &quot;PM&quot;],
+  [&quot;4.5&quot;, 4, &quot;Working cost breakdown by trade package prepared (budget baseline)&quot;, &quot;PM&quot;],
+  [&quot;4.6&quot;, 4, &quot;Subcontractor scope agreements executed (where applicable)&quot;, &quot;PM&quot;],
+  [&quot;4.7&quot;, 4, &quot;Official site handover attended with Supervising Committee / Ministry Engineers&quot;, &quot;PM / Engineer&quot;],
+  [&quot;4.8&quot;, 4, &quot;BEFORE media captured (photos/video) and archived to BEFORE_INSPECTION_LOG&quot;, &quot;Engineer&quot;],
+  [&quot;4.9&quot;, 4, &quot;In-house engineer true-quantity audit of BOQ completed&quot;, &quot;Engineer&quot;],
+  [&quot;4.10&quot;, 4, &quot;Trade packages split (structural core vs. internal trade sourcing)&quot;, &quot;PM&quot;],
+  [&quot;4.11&quot;, 4, &quot;Competing vendor quotations gathered (≥ 2 per trade package) &amp; compared&quot;, &quot;PM / Admin&quot;],
+  [&quot;4.12&quot;, 4, &quot;Vendors/tradesmen bound to fixed-cost agreements; deposits paid; materials mobilized&quot;, &quot;PM / Admin&quot;],
+  [&quot;5.1&quot;, 5, &quot;Project WhatsApp group created (Lead, Engineer, Procurement Officer, Admin observers)&quot;, &quot;PM&quot;],
+  [&quot;5.2&quot;, 5, &quot;Branded safety gear issued to workers &amp; supervisors&quot;, &quot;Admin&quot;],
+  [&quot;5.3&quot;, 5, &quot;Written approval-to-proceed requested at each major execution stage &amp; filed&quot;, &quot;PM / Engineer&quot;],
+  [&quot;5.4&quot;, 5, &quot;Daily Site Log submitted to project channel (ongoing)&quot;, &quot;Engineer&quot;],
+  [&quot;5.5&quot;, 5, &quot;Weekly PM site visit conducted&quot;, &quot;PM&quot;],
+  [&quot;5.6&quot;, 5, &quot;Weekly Project Review held every Monday — budget vs. actual, timeline&quot;, &quot;PM&quot;],
+  [&quot;5.7&quot;, 5, &quot;Monthly Executive Report submitted to MD&quot;, &quot;PM&quot;],
+  [&quot;5.8&quot;, 5, &quot;Letter of Request for Contingency submitted where scope/cost/time overrun (as needed)&quot;, &quot;PM&quot;],
+  [&quot;5.9&quot;, 5, &quot;Change order approved by Project Lead before variance proceeds (as needed)&quot;, &quot;PM&quot;],
+  [&quot;5.10&quot;, 5, &quot;DURING media captured continuously (rebar, pours, MEP rough-ins)&quot;, &quot;Engineer&quot;],
+  [&quot;6.1&quot;, 6, &quot;Internal pre-snag walkthrough &amp; audit completed (PM + Engineer)&quot;, &quot;PM / Engineer&quot;],
+  [&quot;6.2&quot;, 6, &quot;Finish flaws/defects rectified; site cleaned to pristine condition&quot;, &quot;PM&quot;],
+  [&quot;6.3&quot;, 6, &quot;Ministry supervisory inspection held; punch-list signed off&quot;, &quot;PM&quot;],
+  [&quot;6.4&quot;, 6, &quot;Snags resolved within 48–72 hours&quot;, &quot;PM&quot;],
+  [&quot;6.5&quot;, 6, &quot;AFTER media captured&quot;, &quot;Engineer&quot;],
+  [&quot;6.6&quot;, 6, &quot;Completion Notification submitted to MEPB / Budget Department&quot;, &quot;Admin&quot;],
+  [&quot;6.7&quot;, 6, &quot;MEPB Budget Inspection Team escorted on-site&quot;, &quot;PM&quot;],
+  [&quot;6.8&quot;, 6, &quot;MEPB Certification of Work Completed obtained&quot;, &quot;PM&quot;],
+  [&quot;6.9&quot;, 6, &quot;Final submission checklist assembled (balance request, BEFORE/DURING/AFTER report, upgraded PPA cert, bank details, TIN)&quot;, &quot;Admin&quot;],
+  [&quot;6.10&quot;, 6, &quot;Final balance payment routed to disbursement (MEPB → Chairman/Director → Central Procurement → Technical &amp; Planning → Accounts)&quot;, &quot;Accounts&quot;],
+  [&quot;6.11&quot;, 6, &quot;6-month retention / defect-liability monitoring begins&quot;, &quot;PM&quot;],
+  [&quot;6.12&quot;, 6, &quot;Retention inspections completed at Months 1, 3 &amp; 5&quot;, &quot;Engineer&quot;],
+  [&quot;6.13&quot;, 6, &quot;Any emerging defects rectified before final Budget Team inspection&quot;, &quot;PM&quot;],
+  [&quot;6.14&quot;, 6, &quot;Final joint walk with Budget Team completed; retention fund released — PROJECT CLOSED&quot;, &quot;PM&quot;]
+];
+
+var DOC_REFERENCE = [
+  [&quot;A&quot;, &quot;Formal Letter of Bid signed by MD&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Completed, priced Bill of Quantities (BOQ)&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;LASACO Bid Bond Certificate&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;CAC Certificate of Incorporation and MEMART&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Current PPA Registration Certificate (matching class category)&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Current Tax Clearance Certificates (company + 2 directors)&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Evidence of 3-year Lagos State Development Levy payments&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Company brochure, staff CVs, and equipment ownership schedules&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Past Letters of Award and Practical Completion Certificates&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Audited financial statements&quot;, &quot;&quot;],
+  [&quot;A&quot;, &quot;Bank Letter of Credit (where requested)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Formal Letter of Acceptance (company letterhead)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Letter of Authorization — LASG/STO statutory deduction at source&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Evidence of tax &amp; stamp duty payment&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Letter of Request for Advance Payment&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Verified bank details, Tax Clearance Certificate, Director ID&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;LASACO Proposal Form (signed)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Counter-Guarantee Form (executed by company directors)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;CAC Certificate of Incorporation + MEMART (copy)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Three-year company Tax Clearance Certificate&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Personal tax clearances + 3-yr Development Levy receipts (2 directors)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Notification / Letter of Award (copy)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Priced BOQ or technical summary&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Passport photographs and valid photo ID (2 directors)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Company utility bill (issued within last 3 months)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Evidence of past performance (completion certificates, past awards)&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;Signed, undated corporate collateral cheque for the mobilization sum&quot;, &quot;&quot;],
+  [&quot;B&quot;, &quot;LASACO premium payment receipt&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;Passport photograph&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;Government-issued means of identification&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;International passport of the directors&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;Application letter to the General Manager, Lagos State PPA&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;Certificate of Incorporation, or Business Name Registration&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;CVs of key staff with relevant professional licenses/certificates&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;CAC Form 1.1 (Statement of Share Capital)&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;CAC Form 7 (Particulars of Directors) / Notice of Change of Directors&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;Memorandum and Articles of Association (MEMART)&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;Evidence of filing Annual Returns and Notice of Tax Assessment&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;3-year Personal Income Tax Clearance + Development Levy (CEO + 1 Director)&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;Company profile: structure, key personnel, similar jobs previously executed&quot;, &quot;&quot;],
+  [&quot;C&quot;, &quot;(Renewal only) Previous year&#x27;s PPA Registration Certificate + notarized affidavit&quot;, &quot;&quot;],
+  [&quot;D&quot;, &quot;Formal Letter of Request for Balance Payment&quot;, &quot;&quot;],
+  [&quot;D&quot;, &quot;Comprehensive BEFORE, DURING and AFTER pictorial and video report&quot;, &quot;&quot;],
+  [&quot;D&quot;, &quot;Upgraded PPA Registration Certificate matching total contract value&quot;, &quot;&quot;],
+  [&quot;D&quot;, &quot;Verified bank account details on company letterhead&quot;, &quot;&quot;],
+  [&quot;D&quot;, &quot;Company Tax Identification Number (TIN)&quot;, &quot;&quot;],
+  [&quot;D&quot;, &quot;Functional company email address&quot;, &quot;&quot;],
+  [&quot;E&quot;, &quot;PPA Renewal for the year&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Tax Clearance Certificates of two directors&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Development Levy receipts of two directors&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Request letter for 50% Advance Payment&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Letter of Acceptance&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Admin fee and Agreement fee evidence&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Bank details on company letterhead&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Bond&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;CAC Certificate&quot;, &quot;50% Advance&quot;],
+  [&quot;E&quot;, &quot;Request letter for the 25% second payment&quot;, &quot;25% at 6 months&quot;],
+  [&quot;E&quot;, &quot;Copy of Acceptance Letter submitted for first payment&quot;, &quot;25% at 6 months&quot;],
+  [&quot;E&quot;, &quot;Bank details, CAC Certificate, PPA Renewal&quot;, &quot;25% at 6 months&quot;],
+  [&quot;E&quot;, &quot;Tax Clearance and Development Levy receipts of directors&quot;, &quot;25% at 6 months&quot;],
+  [&quot;E&quot;, &quot;Request letter for the 25% balance payment&quot;, &quot;25% Balance, year-end&quot;],
+  [&quot;E&quot;, &quot;Copy of Acceptance Letter submitted for first payment&quot;, &quot;25% Balance, year-end&quot;],
+  [&quot;E&quot;, &quot;Bank details, CAC Certificate, PPA Renewal&quot;, &quot;25% Balance, year-end&quot;],
+  [&quot;E&quot;, &quot;Tax Clearance and Development Levy receipts of directors&quot;, &quot;25% Balance, year-end&quot;],
+  [&quot;E&quot;, &quot;End-user report from Lascon, supporting contract renewal&quot;, &quot;25% Balance, year-end&quot;]
+];
+</pre></section><section class="pane" id="p5">
+  <div class="bar"><div class="meta"><b>Summary.gs</b><span>304 lines · 10,035 characters</span>
+   <p>Rebuilds the flat Summary tab on every write.</p>
+   <p class="dest">In Apps Script: <b>+ → Script</b>, name it <code>Summary</code> — no extension.</p></div>
+   <button class="copy" onclick="cp(5,this)">Copy all</button></div>
+  <pre id="c5">/**
+ * ZONEXA — Portfolio Summary tab
+ * Zoneware Limited
+ *
+ * The dashboard writes to the operational tabs (Projects, StageProgress,
+ * Documents, BOQ, Routing). Those tabs are correct but they are not
+ * readable — StageProgress alone runs to 64 rows per project.
+ *
+ * This file maintains a single flat tab called &quot;Summary&quot;: one row per
+ * project, rebuilt automatically every time anything is saved in the
+ * dashboard. It is a mirror. Nothing typed into it flows back, and it
+ * is rewritten wholesale on the next save, so it is protected against
+ * editing.
+ *
+ * Open it, filter it, sort it, print it. It is the sheet to hand to
+ * the MD when he asks where everything stands.
+ */
+
+var SUMMARY_TAB = &#x27;Summary&#x27;;
+
+var SUMMARY_HEADERS = [
+  &#x27;Reference&#x27;, &#x27;Project&#x27;, &#x27;Client / MDA&#x27;, &#x27;Sector&#x27;, &#x27;Contract type&#x27;, &#x27;Location&#x27;,
+  &#x27;Contract value (₦)&#x27;, &#x27;Project manager&#x27;, &#x27;Site engineer&#x27;, &#x27;Award date&#x27;,
+  &#x27;Board status&#x27;, &#x27;Module&#x27;, &#x27;Steps done&#x27;, &#x27;Steps total&#x27;, &#x27;% complete&#x27;,
+  &#x27;Delayed&#x27;, &#x27;Blocked&#x27;, &#x27;Next open step&#x27;, &#x27;Next action&#x27;, &#x27;Waiting on&#x27;,
+  &#x27;Documents obtained&#x27;, &#x27;Documents required&#x27;, &#x27;Advance stage&#x27;, &#x27;Balance stage&#x27;,
+  &#x27;Advance due (₦)&#x27;, &#x27;Balance due (₦)&#x27;, &#x27;Routing — advance&#x27;, &#x27;Routing — balance&#x27;,
+  &#x27;Last ministry visit&#x27;, &#x27;Practical completion&#x27;, &#x27;Retention ends&#x27;,
+  &#x27;Last updated&#x27;, &#x27;Updated by&#x27;
+];
+
+var SUMMARY_MONEY_COLS = [7, 25, 26];   // 1-based
+var SUMMARY_DATE_COLS  = [10, 29, 30, 31, 32];
+var SUMMARY_PCT_COL    = 15;
+
+/**
+ * Rebuilds the Summary tab from scratch. Called after every write.
+ * Safe to run manually from the editor at any time.
+ */
+function refreshSummary() {
+  var book = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = book.getSheetByName(SUMMARY_TAB);
+  if (!sheet) {
+    sheet = book.insertSheet(SUMMARY_TAB, 0);
+  }
+
+  var projects = readAll(&#x27;Projects&#x27;).filter(function (p) {
+    return String(p.archived).toLowerCase() !== &#x27;yes&#x27; &amp;&amp;
+           String(p.archived).toLowerCase() !== &#x27;true&#x27; &amp;&amp;
+           String(p.id || &#x27;&#x27;).trim() !== &#x27;&#x27;;
+  });
+
+  var stage = groupByProject(readAll(&#x27;StageProgress&#x27;));
+  var docs  = groupByProject(readAll(&#x27;Documents&#x27;));
+  var route = groupByProject(readAll(&#x27;Routing&#x27;));
+
+  var rows = projects.map(function (p) {
+    return summaryRow(p, stage[p.id] || [], docs[p.id] || [], route[p.id] || []);
+  });
+
+  rows.sort(function (a, b) { return String(a[0]).localeCompare(String(b[0])); });
+
+  sheet.clear();
+  sheet.getRange(1, 1, 1, SUMMARY_HEADERS.length).setValues([SUMMARY_HEADERS]);
+
+  if (rows.length) {
+    sheet.getRange(2, 1, rows.length, SUMMARY_HEADERS.length).setValues(rows);
+  }
+
+  formatSummary(sheet, rows.length);
+  stampSummaryFooter(sheet, rows.length);
+  return rows.length;
+}
+
+/* ------------------------------------------------------------------ */
+
+function groupByProject(rows) {
+  var out = {};
+  rows.forEach(function (r) {
+    var k = String(r.projectId || &#x27;&#x27;);
+    if (!out[k]) out[k] = [];
+    out[k].push(r);
+  });
+  return out;
+}
+
+function summaryRow(p, stage, docs, route) {
+  /* --- stage progress --- */
+  var counted = stage.filter(function (s) { return s.status !== &#x27;N/A&#x27;; });
+  var done    = counted.filter(function (s) { return s.status === &#x27;Completed&#x27;; }).length;
+  var total   = counted.length || 64;
+  var delayed = stage.filter(function (s) { return s.status === &#x27;Delayed&#x27;; }).length;
+  var blocked = stage.filter(function (s) { return s.status === &#x27;Blocked&#x27;; }).length;
+
+  /* --- next open step: lowest-numbered step not finished --- */
+  var open = counted.filter(function (s) { return s.status !== &#x27;Completed&#x27;; })
+                    .sort(function (a, b) { return stepKey(a.step) - stepKey(b.step); });
+  var next = open.length ? open[0] : null;
+
+  /* --- documents --- */
+  var docsReq = docs.filter(function (d) {
+    return String(d.status).toLowerCase() !== &#x27;n/a&#x27;;
+  }).length;
+  var docsGot = docs.filter(function (d) {
+    return String(d.status) === &#x27;Obtained&#x27; || String(d.obtained).toLowerCase() === &#x27;yes&#x27;;
+  }).length;
+
+  /* --- routing --- */
+  var adv = route.filter(function (r) { return String(r.tranche) === &#x27;advance&#x27;; });
+  var bal = route.filter(function (r) { return String(r.tranche) === &#x27;balance&#x27;; });
+
+  /* --- money --- */
+  var value = Number(p.value) || 0;
+  var advPct = Number(p.advancePct);
+  var balPct = Number(p.balancePct);
+  if (!advPct &amp;&amp; advPct !== 0) advPct = 0.6;
+  if (!balPct &amp;&amp; balPct !== 0) balPct = 0.4;
+
+  return [
+    p.id || &#x27;&#x27;,
+    p.name || &#x27;&#x27;,
+    p.client || &#x27;&#x27;,
+    p.sector || &#x27;&#x27;,
+    p.type || &#x27;&#x27;,
+    p.location || &#x27;&#x27;,
+    value,
+    p.pm || &#x27;&#x27;,
+    p.engineer || &#x27;&#x27;,
+    dateOrBlank(p.awardDate),
+    p.status || &#x27;Not Started&#x27;,
+    p.module || &#x27;&#x27;,
+    done,
+    total,
+    total ? (done / total) : 0,
+    delayed,
+    blocked,
+    next ? next.step : &#x27;—&#x27;,
+    next ? next.task : &#x27;All steps closed&#x27;,
+    next ? (next.role || &#x27;—&#x27;) : &#x27;—&#x27;,
+    docsGot,
+    docsReq,
+    p.advance || &#x27;Not Due&#x27;,
+    p.balance || &#x27;Not Due&#x27;,
+    value * advPct,
+    value * balPct,
+    chainPosition(adv),
+    chainPosition(bal),
+    lastVisit(adv.concat(bal)),
+    dateOrBlank(p.completion),
+    dateOrBlank(addMonthsSrv(p.completion, 6)),
+    dateOrBlank(p.updatedAt || p.createdAt),
+    p.updatedBy || p.createdBy || &#x27;&#x27;
+  ];
+}
+
+/** &quot;3 of 6 — Resident Internal Audit&quot; */
+function chainPosition(chain) {
+  if (!chain.length) return &#x27;—&#x27;;
+  var sorted = chain.slice().sort(function (a, b) {
+    return Number(a.stepNo) - Number(b.stepNo);
+  });
+  var doneCount = 0;
+  var current = sorted[0];
+  for (var i = 0; i &lt; sorted.length; i++) {
+    if (String(sorted[i].status) === &#x27;Completed&#x27;) { doneCount++; current = sorted[i]; }
+    else { current = sorted[i]; break; }
+  }
+  if (doneCount === sorted.length) return &#x27;Complete (&#x27; + sorted.length + &#x27; of &#x27; + sorted.length + &#x27;)&#x27;;
+  return (doneCount + 1) + &#x27; of &#x27; + sorted.length + &#x27; — &#x27; + (current.name || &#x27;&#x27;);
+}
+
+/** Most recent date any ministry desk was physically attended. */
+function lastVisit(chain) {
+  var best = null;
+  chain.forEach(function (r) {
+    if (!r.lastVisited) return;
+    var d = new Date(r.lastVisited);
+    if (isNaN(d.getTime())) return;
+    if (!best || d &gt; best) best = d;
+  });
+  return best || &#x27;&#x27;;
+}
+
+function stepKey(step) {
+  var parts = String(step || &#x27;0.0&#x27;).split(&#x27;.&#x27;);
+  return Number(parts[0]) * 1000 + Number(parts[1] || 0);
+}
+
+function dateOrBlank(v) {
+  if (!v) return &#x27;&#x27;;
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? &#x27;&#x27; : d;
+}
+
+function addMonthsSrv(v, months) {
+  if (!v) return &#x27;&#x27;;
+  var d = new Date(v);
+  if (isNaN(d.getTime())) return &#x27;&#x27;;
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+/* ------------------------------------------------------------------ */
+
+function formatSummary(sheet, rowCount) {
+  var cols = SUMMARY_HEADERS.length;
+
+  sheet.getRange(1, 1, 1, cols)
+       .setFontWeight(&#x27;bold&#x27;)
+       .setBackground(&#x27;#0a0a0a&#x27;)
+       .setFontColor(&#x27;#ffffff&#x27;)
+       .setVerticalAlignment(&#x27;middle&#x27;)
+       .setWrap(true);
+  sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(2);
+  sheet.setRowHeight(1, 42);
+
+  if (!rowCount) return;
+
+  var body = sheet.getRange(2, 1, rowCount, cols);
+  body.setVerticalAlignment(&#x27;middle&#x27;);
+  body.setFontSize(10);
+
+  SUMMARY_MONEY_COLS.forEach(function (c) {
+    sheet.getRange(2, c, rowCount, 1).setNumberFormat(&#x27;₦#,##0&#x27;);
+  });
+  SUMMARY_DATE_COLS.forEach(function (c) {
+    sheet.getRange(2, c, rowCount, 1).setNumberFormat(&#x27;dd mmm yyyy&#x27;);
+  });
+  sheet.getRange(2, SUMMARY_PCT_COL, rowCount, 1).setNumberFormat(&#x27;0%&#x27;);
+
+  /* Banded rows, quiet */
+  for (var r = 2; r &lt; 2 + rowCount; r++) {
+    if (r % 2 === 0) {
+      sheet.getRange(r, 1, 1, cols).setBackground(&#x27;#fafafa&#x27;);
+    }
+  }
+
+  /* Progress bar on % complete */
+  var pct = sheet.getRange(2, SUMMARY_PCT_COL, rowCount, 1);
+  var rules = [];
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .setGradientMaxpointWithValue(&#x27;#45c0d6&#x27;, SpreadsheetApp.InterpolationType.NUMBER, &#x27;1&#x27;)
+    .setGradientMinpointWithValue(&#x27;#ffffff&#x27;, SpreadsheetApp.InterpolationType.NUMBER, &#x27;0&#x27;)
+    .setRanges([pct]).build());
+
+  /* Delayed / Blocked counts flag red when non-zero */
+  [16, 17].forEach(function (c) {
+    var rng = sheet.getRange(2, c, rowCount, 1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0)
+      .setBackground(&#x27;#fde8e8&#x27;).setFontColor(&#x27;#dc2626&#x27;).setBold(true)
+      .setRanges([rng]).build());
+  });
+
+  /* Board status colouring */
+  var st = sheet.getRange(2, 11, rowCount, 1);
+  [[&#x27;At Risk&#x27;, &#x27;#fff4e5&#x27;, &#x27;#b45309&#x27;],
+   [&#x27;Delayed&#x27;, &#x27;#fde8e8&#x27;, &#x27;#dc2626&#x27;],
+   [&#x27;On Track&#x27;, &#x27;#e9f8ef&#x27;, &#x27;#16a34a&#x27;],
+   [&#x27;Closed&#x27;,   &#x27;#f0f0f0&#x27;, &#x27;#555555&#x27;]].forEach(function (t) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains(t[0])
+      .setBackground(t[1]).setFontColor(t[2])
+      .setRanges([st]).build());
+  });
+
+  sheet.setConditionalFormatRules(rules);
+
+  sheet.getRange(2, 2, rowCount, 1).setWrap(true);
+  sheet.getRange(2, 19, rowCount, 1).setWrap(true);
+  for (var c2 = 1; c2 &lt;= cols; c2++) sheet.autoResizeColumn(c2);
+  sheet.setColumnWidth(2, 260);
+  sheet.setColumnWidth(19, 300);
+
+  /* Filter across the whole table */
+  var existing = sheet.getFilter();
+  if (existing) existing.remove();
+  sheet.getRange(1, 1, rowCount + 1, cols).createFilter();
+}
+
+function stampSummaryFooter(sheet, rowCount) {
+  var note = &#x27;Generated automatically by Zonexa · &#x27; +
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), &#x27;dd MMM yyyy HH:mm&#x27;) +
+    &#x27; · &#x27; + rowCount + &#x27; active project&#x27; + (rowCount === 1 ? &#x27;&#x27; : &#x27;s&#x27;) +
+    &#x27; · This tab is rewritten on every save — do not type into it.&#x27;;
+  sheet.getRange(rowCount + 3, 1)
+       .setValue(note)
+       .setFontSize(9)
+       .setFontColor(&#x27;#555555&#x27;)
+       .setFontStyle(&#x27;italic&#x27;);
+}
+
+/**
+ * Hourly safety net, in case a write ever fails to trigger a refresh.
+ * Run installSummaryTrigger() once from the editor.
+ */
+function installSummaryTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === &#x27;refreshSummary&#x27;) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(&#x27;refreshSummary&#x27;).timeBased().everyHours(1).create();
+}
+</pre></section>
+<footer>If a copy button does nothing, click into the code, Ctrl+A then Ctrl+C.</footer></div>
+<script>
+function show(i){document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('on',+t.dataset.i===i)});
+document.querySelectorAll('.pane').forEach(function(p,j){p.classList.toggle('on',j===i)});}
+function cp(i,btn){var txt=document.getElementById('c'+i).textContent;
+function ok(){var o=btn.textContent;btn.textContent='Copied';btn.classList.add('done');
+setTimeout(function(){btn.textContent=o;btn.classList.remove('done')},1600);}
+function fb(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';
+ta.style.opacity=0;document.body.appendChild(ta);ta.select();
+try{document.execCommand('copy');ok()}catch(e){btn.textContent='Select manually'}
+document.body.removeChild(ta);}
+if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(ok,fb);}else fb();}
+</script></body></html>

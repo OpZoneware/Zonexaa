@@ -381,3 +381,14 @@ table.z tbody tr:hover td{background:#fafafa}
 .step select:disabled,.step input:disabled{background:#f6f6f6;color:#777;
   border-color:rgba(10,10,10,.08);cursor:not-allowed}
 .empty{padding:28px;text-align:center;color:var(--muted);font-size:13px}
+
+/* ---- Password sign-in ---- */
+.pw{position:relative;display:flex;align-items:center}
+.pw input{flex:1;padding-right:70px}
+.pw .peek{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  border:0;background:transparent;color:#555;font-size:12px;font-weight:600;
+  cursor:pointer;padding:6px 8px;border-radius:8px;font-family:inherit}
+.pw .peek:hover{background:rgba(10,10,10,.06);color:#0a0a0a}
+.msg{min-height:20px;margin-top:12px;font-size:13px;color:#555}
+.msg.error{color:#dc2626}
+.msg.ok{color:#16a34a}

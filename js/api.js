@@ -10,54 +10,108 @@ const API = {
 
   connected() { return Boolean(CONFIG.API_URL); },
 
-  /* IMPORTANT — Content-Type must stay text/plain.
-     Apps Script cannot answer a CORS preflight. text/plain keeps the
-     request "simple" so the browser never sends one. Switching this
-     to application/json breaks every call. */
+  /* ------------------------------------------------------------
+     Transport — JSONP, not fetch.
+
+     Apps Script cannot send an Access-Control-Allow-Origin header,
+     so any fetch() to it is blocked by the browser. A <script> tag
+     has never been subject to the same-origin policy, so we load
+     the endpoint as a script and read the answer through a global
+     callback. CORS does not apply and cannot come back.
+
+     Requests are GET, so payloads travel in the URL. Anything over
+     about 6,000 characters would be a problem — nothing in Zonexa
+     comes close, but callBig() is there if that ever changes.
+     ------------------------------------------------------------ */
+  _seq: 0,
+
+  jsonp(action, payload, token, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const name = 'zx_' + (++this._seq) + '_' + Date.now().toString(36);
+      const url = CONFIG.API_URL +
+        '?action='   + encodeURIComponent(action) +
+        '&payload='  + encodeURIComponent(JSON.stringify(payload || {})) +
+        '&token='    + encodeURIComponent(token || '') +
+        '&callback=' + name +
+        '&_=' + Date.now();
+
+      const tag = document.createElement('script');
+      let settled = false;
+
+      const cleanup = () => {
+        try { delete window[name]; } catch (e) { window[name] = undefined; }
+        if (tag.parentNode) tag.parentNode.removeChild(tag);
+        clearTimeout(timer);
+      };
+
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true; cleanup();
+        reject(new Error('The Zonexa server did not respond. Check CONFIG.API_URL ' +
+                         'and that the deployment access is set to Anyone.'));
+      }, timeoutMs || 25000);
+
+      window[name] = (res) => {
+        if (settled) return;
+        settled = true; cleanup();
+        resolve(res);
+      };
+
+      tag.onerror = () => {
+        if (settled) return;
+        settled = true; cleanup();
+        reject(new Error('Cannot reach the Zonexa server. Either the URL is wrong, ' +
+                         'or the deployment access is not set to Anyone.'));
+      };
+
+      tag.src = url;
+      document.head.appendChild(tag);
+    });
+  },
+
   async call(action, payload) {
     if (!this.connected()) return null;
 
-    let res;
-    try {
-      res = await fetch(CONFIG.API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        redirect: 'follow',
-        body: JSON.stringify({ action, payload: payload || {}, token: Store.token() })
-      });
-    } catch (e) {
-      throw new Error('Cannot reach the Zonexa server. Check your connection.');
-    }
+    const out = await this.jsonp(action, payload, Store.token());
 
-    if (!res.ok) throw new Error('Request failed (' + res.status + ')');
-
-    const text = await res.text();
-    let out;
-    try {
-      out = JSON.parse(text);
-    } catch (e) {
-      /* Apps Script returns an HTML error page when the deployment is
-         wrong — almost always "Who has access" is not set to Anyone. */
-      throw new Error('The Zonexa server returned a page instead of data. ' +
-                      'Check the deployment is set to "Anyone".');
-    }
+    if (!out) throw new Error('Empty response from the Zonexa server.');
 
     if (out.authFailed) {
       Store.clearSession();
-      throw new Error(out.error || 'Your session has expired. Sign in again.');
+      const err = new Error(out.error || 'Your session has ended. Sign in again.');
+      err.authFailed = true;
+      throw err;
     }
     if (out.error) throw new Error(out.error);
     return out.data;
   },
 
-  /* Confirms the token and returns the role held on the Users tab. */
+  /* ---------- account ---------- */
+
+  /* No token yet at this point, so it goes direct. */
+  async login(username, password) {
+    const out = await this.jsonp('login', { username, password }, '');
+    if (!out) throw new Error('Empty response from the Zonexa server.');
+    if (out.error) throw new Error(out.error);
+    return out.data;                      // { token, user }
+  },
+
+  async logout() {
+    try { await this.call('logout'); } catch (e) { /* leaving anyway */ }
+  },
+
   async whoami() { return this.call('whoami'); },
 
-  /* One-line health check. Open the console and run API.ping(). */
-  async ping() {
-    const res = await fetch(CONFIG.API_URL + '?action=ping');
-    return res.json();
+  async changePassword(currentPassword, newPassword) {
+    return this.call('changePassword', { currentPassword, newPassword });
   },
+
+  async adminSetPassword(email, password) {
+    return this.call('adminSetPassword', { email, password });
+  },
+
+  /* Health check. Run API.ping() in the browser console. */
+  async ping() { return this.jsonp('ping', {}, '', 12000); },
 
   /* ---------- projects ---------- */
 
@@ -245,10 +299,9 @@ const Store = {
   session() { return this.read(this.K.session, null); },
   setSession(s) { this.write(this.K.session, s); },
   clearSession() { try { localStorage.removeItem(this.K.session); } catch (e) {} },
-  /* The Google ID token issued at sign-in. Apps Script verifies it
-     with Google on every request, so this is the only credential
-     the back end will accept. */
-  token() { const s = this.session(); return (s && s.credential) || ''; },
+  /* The session token issued by Apps Script at sign-in. It lasts 12
+     hours and is the only credential the back end accepts. */
+  token() { const s = this.session(); return (s && s.token) || ''; },
 
   /* ---- projects ---- */
   projects() { return this.read(this.K.projects, SEED_PROJECTS); },

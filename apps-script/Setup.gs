@@ -28,7 +28,10 @@ function setupZonexa() {
     'Routing': ['projectId','tranche','stepNo','name','status','date',
                 'lastVisited','notes'],
 
-    'Users': ['id','name','email','role','active'],
+    'Users': ['id','name','email','role','active','username','salt','hash',
+              'mustChangePassword','lastLogin','loginCount','createdAt'],
+
+    'Sessions': ['token','email','issued','expires'],
 
     'CompanyDocs': ['name','status','obtained','expiry','link','notes'],
 
@@ -52,6 +55,7 @@ function setupZonexa() {
 
   seedRates(book);
   seedUsers(book);
+  protectCredentialColumns(book);
   refreshSummary();
   installSummaryTrigger();
 
@@ -61,9 +65,10 @@ function setupZonexa() {
     '  Execute as     : Me\n' +
     '  Who has access : Anyone\n\n' +
     '"Anyone" is required because the request arrives from the Vercel\n' +
-    'site, not from a signed-in Google session. Api.gs still rejects\n' +
-    'every request that does not carry a valid Google ID token for an\n' +
-    'address on the Users tab.\n\n' +
+    'site, not from a signed-in Google session. Api.gs still refuses\n' +
+    'every action except ping and login without a valid session token.\n\n' +
+    'THEN run generateStartingPasswords() once and copy the list out of\n' +
+    'the execution log. That is the only time the passwords are visible.\n\n' +
     'Then paste the Web App URL into CONFIG.API_URL in js/config.js\n' +
     'and push to GitHub.\n\n' +
     'A tab called Summary has also been created. It rebuilds itself\n' +
@@ -92,12 +97,12 @@ function seedUsers(book) {
   var sheet = book.getSheetByName('Users');
   if (sheet.getLastRow() > 1) return;
   [
-    ['U-01','Dile Ipinmoroti','dile@redwarelimited.com','Managing Director','Yes'],
-    ['U-02','Oluwatoyin Bada','oluwatoyin@redwarelimited.com','Head of Projects & Operations','Yes'],
-    ['U-03','Olutimehin Daniel Gbenga','operations@redwarelimited.com','IT Support','Yes'],
-    ['U-04','Roseline Adeyemi','roseline@redwarelimited.com','Project Manager','Yes'],
-    ['U-05','Rokibat Adeyemo','rokibat@redwarelimited.com','Project Manager','Yes'],
-    ['U-06','Seyifunmi Alabi','seyifunmi@redwarelimited.com','Project Manager','Yes']
+    ['U-01','Dile Ipinmoroti','dile@redwarelimited.com','Managing Director','Yes','dile'],
+    ['U-02','Oluwatoyin Bada','oluwatoyin@redwarelimited.com','Head of Projects & Operations','Yes','toyin'],
+    ['U-03','Olutimehin Daniel Gbenga','operations@redwarelimited.com','IT Support','Yes','daniel'],
+    ['U-04','Roseline Adeyemi','roseline@redwarelimited.com','Project Manager','Yes','roseline'],
+    ['U-05','Rokibat Adeyemo','rokibat@redwarelimited.com','Project Manager','Yes','rokibat'],
+    ['U-06','Seyifunmi Alabi','seyifunmi@redwarelimited.com','Project Manager','Yes','seyifunmi']
     /* Accounts, Admin and Site Engineers are not issued logins in this
        release. Their information reaches the system through the
        Project Manager assigned to the project. */
@@ -134,3 +139,33 @@ function seedProject(projectId, contractType) {
 }
 
 /* Reference arrays are held in Reference.gs */
+
+
+/**
+ * Hides the salt and hash columns and warns anyone who opens the tab.
+ * Hiding is presentational, not security — anyone with edit access to
+ * the workbook can unhide them. The real protection is that a hash is
+ * not a password and cannot be turned back into one.
+ */
+function protectCredentialColumns(book) {
+  try {
+    var sheet = book.getSheetByName('Users');
+    var head = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    ['salt', 'hash'].forEach(function (name) {
+      var c = head.indexOf(name) + 1;
+      if (c > 0) {
+        sheet.hideColumns(c);
+        sheet.getRange(1, c).setNote(
+          'Set by the system. Do not edit by hand — it will lock the user out. ' +
+          'Use adminSetPassword() or the reset in the dashboard.');
+      }
+    });
+
+    var sess = book.getSheetByName('Sessions');
+    if (sess) {
+      sess.getRange('A1').setNote(
+        'Live sign-in sessions. Delete a row to sign that person out immediately. ' +
+        'Expired rows are cleared automatically.');
+    }
+  } catch (err) { /* cosmetic only */ }
+}
