@@ -364,3 +364,20 @@ table.z tbody tr:hover td{background:#fafafa}
   .main{margin-left:0;padding:0}
   .panel,.pcard,.kpi,.table-wrap,.module{box-shadow:none;break-inside:avoid}
 }
+
+
+/* ---- Step ownership ---- */
+.stagebar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 14px;margin:0 0 14px;background:#fff;border:1px solid var(--line);
+  border-radius:14px}
+.stagebar .mycount{font-size:13px;font-weight:600;color:var(--ink)}
+.stagebar .ghost{font-size:12px;padding:7px 12px;border-radius:10px;cursor:pointer;
+  background:#fff;color:var(--ink);border:1px solid var(--line)}
+.stagebar .ghost.on{background:#0a0a0a;color:#fff;border-color:#0a0a0a}
+.step.mine{background:rgba(69,192,214,.06);box-shadow:inset 3px 0 0 #45c0d6}
+.step .who .yours{display:inline-block;margin-left:8px;font-size:10px;
+  letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  color:#0a0a0a;background:#45c0d6;border-radius:6px;padding:2px 6px}
+.step select:disabled,.step input:disabled{background:#f6f6f6;color:#777;
+  border-color:rgba(10,10,10,.08);cursor:not-allowed}
+.empty{padding:28px;text-align:center;color:var(--muted);font-size:13px}

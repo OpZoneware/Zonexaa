@@ -10,17 +10,53 @@ const API = {
 
   connected() { return Boolean(CONFIG.API_URL); },
 
+  /* IMPORTANT — Content-Type must stay text/plain.
+     Apps Script cannot answer a CORS preflight. text/plain keeps the
+     request "simple" so the browser never sends one. Switching this
+     to application/json breaks every call. */
   async call(action, payload) {
     if (!this.connected()) return null;
-    const res = await fetch(CONFIG.API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, payload: payload || {}, token: Store.token() })
-    });
+
+    let res;
+    try {
+      res = await fetch(CONFIG.API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        redirect: 'follow',
+        body: JSON.stringify({ action, payload: payload || {}, token: Store.token() })
+      });
+    } catch (e) {
+      throw new Error('Cannot reach the Zonexa server. Check your connection.');
+    }
+
     if (!res.ok) throw new Error('Request failed (' + res.status + ')');
-    const out = await res.json();
+
+    const text = await res.text();
+    let out;
+    try {
+      out = JSON.parse(text);
+    } catch (e) {
+      /* Apps Script returns an HTML error page when the deployment is
+         wrong — almost always "Who has access" is not set to Anyone. */
+      throw new Error('The Zonexa server returned a page instead of data. ' +
+                      'Check the deployment is set to "Anyone".');
+    }
+
+    if (out.authFailed) {
+      Store.clearSession();
+      throw new Error(out.error || 'Your session has expired. Sign in again.');
+    }
     if (out.error) throw new Error(out.error);
     return out.data;
+  },
+
+  /* Confirms the token and returns the role held on the Users tab. */
+  async whoami() { return this.call('whoami'); },
+
+  /* One-line health check. Open the console and run API.ping(). */
+  async ping() {
+    const res = await fetch(CONFIG.API_URL + '?action=ping');
+    return res.json();
   },
 
   /* ---------- projects ---------- */
@@ -209,7 +245,10 @@ const Store = {
   session() { return this.read(this.K.session, null); },
   setSession(s) { this.write(this.K.session, s); },
   clearSession() { try { localStorage.removeItem(this.K.session); } catch (e) {} },
-  token() { const s = this.session(); return s ? s.email : ''; },
+  /* The Google ID token issued at sign-in. Apps Script verifies it
+     with Google on every request, so this is the only credential
+     the back end will accept. */
+  token() { const s = this.session(); return (s && s.credential) || ''; },
 
   /* ---- projects ---- */
   projects() { return this.read(this.K.projects, SEED_PROJECTS); },

@@ -10,12 +10,12 @@ const CONFIG = {
 
   /* Apps Script Web App URL.
      Deploy > New deployment > Web app, then paste the URL here. */
-  API_URL: 'https://script.google.com/macros/s/AKfycbxemMbjnACimZTjDGUkY68ykOU2JOPBYm3Y1ox0h3DuiZLeyltGp4AyRsGpeDdvy0okhA/exec',
+  API_URL: '',
 
   /* Google Cloud OAuth Client ID (Web application).
      Console > APIs & Services > Credentials > Create OAuth client ID.
      Leave blank to fall back to directory sign-in during setup. */
-  GOOGLE_CLIENT_ID: '870128330816-dth54pd32eqgib6apk3n9reghpbosgaa.apps.googleusercontent.com',
+  GOOGLE_CLIENT_ID: '',
 
   /* Only addresses on these domains may sign in. */
   ALLOWED_DOMAINS: ['redwarelimited.com', 'zonewareltd.com'],
@@ -108,21 +108,61 @@ const ROUTING = {
   ]
 };
 
+/* Four roles hold logins in this release. Site Engineers, the
+   Accountant and the Administrative Officer do not sign in — they
+   report to the Project Manager, who records their information. */
 const ROLES = [
   'Managing Director',
   'Head of Projects & Operations',
-  'Project Manager',
-  'Site Engineer',
-  'Accountant',
-  'Administrative Officer',
-  'Operations & Process Improvement'
+  'IT Support',
+  'Project Manager'
 ];
 
-/* Roles that may edit any project, create projects and archive */
-const FULL_EDIT = ['Head of Projects & Operations', 'Operations & Process Improvement'];
+/* Roles that may edit anything on any project */
+const FULL_EDIT = ['Head of Projects & Operations', 'IT Support'];
 
-/* Roles with read-only access across the portfolio */
+/* Read across the portfolio, change nothing */
 const READ_ALL  = ['Managing Director'];
 
-/* Roles permitted to create and archive projects */
+/* Create and archive projects */
 const CAN_MANAGE = FULL_EDIT;
+
+const EDIT_RIGHTS = {
+  stage:     FULL_EDIT.concat([]),
+  documents: FULL_EDIT.concat([]),
+  payments:  FULL_EDIT.concat([]),
+  routing:   FULL_EDIT.concat([]),
+  siteLog:   FULL_EDIT.concat([])
+};
+
+/* ============================================================
+   STEP OWNERSHIP — the tracking model.
+   Every one of the 64 steps carries a responsible role from the
+   SOP. That column, not a blanket permission table, decides who
+   may stamp the step. Everybody sees every step; you update only
+   the ones that are yours.
+   ============================================================ */
+
+const OWNER_TOKENS = {
+  'PM':       ['Project Manager'],
+  'MD':       ['Managing Director'],
+  /* Admin, Accounts and Engineer hold no logins in this release.
+     They pass their information to the assigned Project Manager. */
+  'Admin':    ['Project Manager'],
+  'Accounts': ['Project Manager'],
+  'Engineer': ['Project Manager'],
+  'Ministry': ['Project Manager']
+};
+
+const STEP_OVERSEERS = FULL_EDIT;
+const ASSIGNED_ONLY  = ['Project Manager'];
+
+function stepOwnerRoles(token) {
+  const out = [];
+  String(token || '').split('/').forEach(function (t) {
+    (OWNER_TOKENS[t.trim()] || []).forEach(function (r) {
+      if (out.indexOf(r) === -1) out.push(r);
+    });
+  });
+  return out;
+}

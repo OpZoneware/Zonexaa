@@ -45,17 +45,31 @@ function setupZonexa() {
     }
     var head = sheet.getRange(1, 1, 1, schema[name].length);
     head.setFontWeight('bold')
-        .setBackground('#0a1f2c')
+        .setBackground('#0a0a0a')
         .setFontColor('#ffffff');
     sheet.setFrozenRows(1);
   });
 
   seedRates(book);
   seedUsers(book);
+  refreshSummary();
+  installSummaryTrigger();
 
   SpreadsheetApp.getUi().alert(
     'Zonexa workbook ready.\n\n' +
-    'Next: Deploy > New deployment > Web app, then paste the URL into js/config.js'
+    'Next: Deploy > New deployment > Web app\n' +
+    '  Execute as     : Me\n' +
+    '  Who has access : Anyone\n\n' +
+    '"Anyone" is required because the request arrives from the Vercel\n' +
+    'site, not from a signed-in Google session. Api.gs still rejects\n' +
+    'every request that does not carry a valid Google ID token for an\n' +
+    'address on the Users tab.\n\n' +
+    'Then paste the Web App URL into CONFIG.API_URL in js/config.js\n' +
+    'and push to GitHub.\n\n' +
+    'A tab called Summary has also been created. It rebuilds itself\n' +
+    'every time the dashboard is saved — one row per project. Read it,\n' +
+    'filter it, print it, but do not type into it.\n\n' +
+    'Test it first: open <WEB_APP_URL>?action=ping in a browser.'
   );
 }
 
@@ -80,12 +94,13 @@ function seedUsers(book) {
   [
     ['U-01','Dile Ipinmoroti','dile@redwarelimited.com','Managing Director','Yes'],
     ['U-02','Oluwatoyin Bada','oluwatoyin@redwarelimited.com','Head of Projects & Operations','Yes'],
-    ['U-03','Olutimehin Daniel Gbenga','operations@redwarelimited.com','Operations & Process Improvement','Yes'],
+    ['U-03','Olutimehin Daniel Gbenga','operations@redwarelimited.com','IT Support','Yes'],
     ['U-04','Roseline Adeyemi','roseline@redwarelimited.com','Project Manager','Yes'],
     ['U-05','Rokibat Adeyemo','rokibat@redwarelimited.com','Project Manager','Yes'],
-    ['U-06','Seyifunmi Alabi','seyifunmi@redwarelimited.com','Project Manager','Yes'],
-    ['U-07','Omowunmi','accounts@redwarelimited.com','Accountant','Yes'],
-    ['U-08','Alomasojo Gbenga','admin@redwarelimited.com','Administrative Officer','Yes']
+    ['U-06','Seyifunmi Alabi','seyifunmi@redwarelimited.com','Project Manager','Yes']
+    /* Accounts, Admin and Site Engineers are not issued logins in this
+       release. Their information reaches the system through the
+       Project Manager assigned to the project. */
   ].forEach(function (r) { sheet.appendRow(r); });
 }
 
@@ -94,19 +109,28 @@ function seedUsers(book) {
  * Call after adding a project to the Projects tab.
  */
 function seedProject(projectId, contractType) {
-  var book = SpreadsheetApp.getActiveSpreadsheet();
-  var stage = book.getSheetByName('StageProgress');
-  var docs  = book.getSheetByName('Documents');
+  var wb = SpreadsheetApp.getActiveSpreadsheet();
+  var stage = wb.getSheetByName('StageProgress');
+  var docs  = wb.getSheetByName('Documents');
 
-  STAGE_REFERENCE.forEach(function (s) {
-    stage.appendRow([projectId, s[0], s[1], s[2], s[3], 'Not Started', '', '', '', '', '', '']);
+  var stageRows = STAGE_REFERENCE.map(function (s) {
+    return [projectId, s[0], s[1], s[2], s[3], 'Not Started', '', '', '', '', '', ''];
   });
+  if (stageRows.length) {
+    stage.getRange(stage.getLastRow() + 1, 1, stageRows.length, stageRows[0].length)
+         .setValues(stageRows);
+  }
 
+  var docRows = [];
   DOC_REFERENCE.forEach(function (d) {
-    if (d[0] === 'C') return;                                   // entity level
+    if (d[0] === 'C') return;                                    // entity level
     if (d[0] === 'E' && contractType !== 'Facility Management') return;
-    docs.appendRow([projectId, d[0], d[1], d[2], 'Not Started', '', '', '', '', '']);
+    docRows.push([projectId, d[0], d[1], d[2], 'Not Started', '', '', '', '', '']);
   });
+  if (docRows.length) {
+    docs.getRange(docs.getLastRow() + 1, 1, docRows.length, docRows[0].length)
+        .setValues(docRows);
+  }
 }
 
 /* Reference arrays are held in Reference.gs */

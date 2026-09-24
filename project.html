@@ -37,6 +37,7 @@
   <div id="panelRoute" style="display:none"></div>
 </main>
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="js/config.js"></script>
 <script src="js/data.js"></script>
 <script src="js/api.js"></script>
@@ -44,7 +45,9 @@
 <script src="js/shell.js"></script>
 <script src="js/projects.js"></script>
 <script>
-let P = null, EDIT = false;
+let P = null;
+/* Area-level permissions, resolved once the project is loaded */
+let CAN = { stage: false, documents: false, payments: false, routing: false };
 
 (async function () {
   const s = Session.require();
@@ -56,7 +59,12 @@ let P = null, EDIT = false;
     document.getElementById('pName').textContent = 'Project not found';
     return;
   }
-  EDIT = Session.ownsProject(P) && !Session.isReadOnly();
+  CAN = {
+    stage:     Session.can('stage', P),
+    documents: Session.can('documents', P),
+    payments:  Session.can('payments', P),
+    routing:   Session.can('routing', P)
+  };
 
   header();
   drawStage();
@@ -94,12 +102,14 @@ function header() {
   document.getElementById('pMeta').innerHTML = m.map(x =>
     '<div><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('');
 
-  if (!EDIT) {
+  const note = Session.accessNote(P);
+  if (note) {
+    const ownsAnyStep = Store.stageProgress(P.id)
+      .some(r => Session.ownsStep(r.role, P));
+    const anyEdit = ownsAnyStep || CAN.documents || CAN.payments || CAN.routing;
     document.querySelector('.tabs').insertAdjacentHTML('afterend',
-      '<div class="note"><b>Read only.</b> ' +
-      (Session.isReadOnly()
-        ? 'Managing Director access is view-only across all projects.'
-        : 'You are not assigned to this project.') + '</div>');
+      '<div class="note"><b>' + (anyEdit ? 'Partial access.' : 'Read only.') +
+      '</b> ' + note + '</div>');
   }
 }
 
@@ -113,10 +123,32 @@ function tab(which) {
 }
 
 /* ---------- stage checklist ---------- */
+let MINE_ONLY = false;
+function toggleMine() { MINE_ONLY = !MINE_ONLY; drawStage(); }
+
 function drawStage() {
-  const rows = Store.stageProgress(P.id);
+  const all = Store.stageProgress(P.id);
+  const openMine = Session.myOpenSteps(P, all);
+  const rows = MINE_ONLY ? all.filter(r => Session.ownsStep(r.role, P)) : all;
   const modules = [...new Set(rows.map(r => r.module))].sort();
-  let html = '';
+
+  let html =
+    '<div class="stagebar">' +
+      '<span class="mycount">' +
+        (openMine ? openMine + ' step' + (openMine === 1 ? '' : 's') + ' waiting on you'
+                  : 'Nothing on this project is waiting on you') +
+      '</span>' +
+      '<button type="button" class="ghost' + (MINE_ONLY ? ' on' : '') +
+        '" onclick="toggleMine()">' +
+        (MINE_ONLY ? 'Showing my steps' : 'Show only my steps') +
+      '</button>' +
+    '</div>';
+
+  if (!rows.length) {
+    document.getElementById('panelStage').innerHTML = html +
+      '<p class="empty">No steps are assigned to your role on this project.</p>';
+    return;
+  }
 
   modules.forEach(m => {
     const inMod = rows.filter(r => r.module === m);
@@ -128,21 +160,24 @@ function drawStage() {
         '<h3>Module ' + m + ' — ' + esc(inMod[0].moduleTitle) + '</h3>' +
         '<span class="prog">' + done + ' / ' + inMod.length + '</span>' +
       '</div><div class="module-body">' +
-      inMod.map(r =>
-        '<div class="step">' +
+      inMod.map(r => {
+        const mine = Session.ownsStep(r.role, P);
+        const lk = mine ? '' : 'disabled ';
+        return '<div class="step' + (mine ? ' mine' : '') + '">' +
           '<div class="no">' + esc(r.step) + '</div>' +
           '<div><div class="task">' + esc(r.task) + '</div>' +
-            '<div class="who">' + esc(r.role || '') + '</div></div>' +
-          '<select ' + (EDIT ? '' : 'disabled ') +
+            '<div class="who">' + esc(r.role || '') +
+              (mine ? ' <b class="yours">yours to update</b>' : '') + '</div></div>' +
+          '<select ' + lk +
             'onchange="setStep(\'' + r.step + '\',\'status\',this.value)">' +
             STEP_STATUSES.map(o => '<option' + (o === r.status ? ' selected' : '') +
               '>' + o + '</option>').join('') + '</select>' +
-          '<input type="date" value="' + esc(r.actual) + '" ' + (EDIT ? '' : 'disabled ') +
+          '<input type="date" value="' + esc(r.actual) + '" ' + lk +
             'onchange="setStep(\'' + r.step + '\',\'actual\',this.value)"/>' +
-          '<input type="url" placeholder="Evidence link" value="' + esc(r.evidence) + '" ' +
-            (EDIT ? '' : 'disabled ') +
+          '<input type="url" placeholder="Evidence link" value="' + esc(r.evidence) + '" ' + lk +
             'onchange="setStep(\'' + r.step + '\',\'evidence\',this.value)"/>' +
-        '</div>').join('') +
+        '</div>';
+      }).join('') +
       '</div></section>';
   });
 
@@ -173,12 +208,12 @@ function drawDocs() {
       html += '<div class="docrow">' +
         '<div>' + esc(d.name) +
           (d.tranche ? ' <span class="chip grey">' + esc(d.tranche) + '</span>' : '') + '</div>' +
-        '<select ' + (EDIT ? '' : 'disabled ') +
+        '<select ' + (CAN.documents ? '' : 'disabled ') +
           'onchange="setDoc(\'' + escAttr(d.name) + '\',\'status\',this.value)">' +
           STEP_STATUSES.map(o => '<option' + (o === d.status ? ' selected' : '') +
             '>' + o + '</option>').join('') + '</select>' +
         '<input type="url" placeholder="Paste Drive or document link" value="' + esc(d.link) + '" ' +
-          (EDIT ? '' : 'disabled ') +
+          (CAN.documents ? '' : 'disabled ') +
           'onchange="setDoc(\'' + escAttr(d.name) + '\',\'link\',this.value)"/>' +
         '<div>' + (d.link
             ? '<a class="linkpill" target="_blank" rel="noopener" href="' + esc(d.link) + '">Open</a>'
@@ -213,7 +248,7 @@ function drawPay() {
     '<div><h2>Bill of Quantities — cost ceiling</h2>' +
     '<p>Per line: value less tax less company margin gives the vendor ceiling. ' +
     'Tax varies by ministry.</p></div><div class="spacer"></div>' +
-    (EDIT ? '<button class="btn sm" type="button" onclick="addLine()">Add line</button>' : '') +
+    (CAN.payments ? '<button class="btn sm" type="button" onclick="addLine()">Add line</button>' : '') +
     '</div><div class="panel-body tight" id="boqBody"></div></div>';
 
   document.getElementById('panelPay').innerHTML = html;
@@ -250,7 +285,7 @@ function drawBoq() {
   let html = '<table class="z"><thead><tr>' +
     '<th>Trade / item</th><th class="num">BOQ value</th><th class="num">Tax %</th>' +
     '<th class="num">Tax</th><th class="num">Margin %</th><th class="num">Margin</th>' +
-    '<th class="num">Vendor ceiling</th>' + (EDIT ? '<th></th>' : '') +
+    '<th class="num">Vendor ceiling</th>' + (CAN.payments ? '<th></th>' : '') +
     '</tr></thead><tbody>';
 
   lines.forEach(l => {
@@ -264,7 +299,7 @@ function drawBoq() {
       '<td class="num">' + (l.marginRate * 100).toFixed(1) + '%</td>' +
       '<td class="num">' + naira(c.margin) + '</td>' +
       '<td class="num"><b style="color:var(--green)">' + naira(c.ceiling) + '</b></td>' +
-      (EDIT ? '<td><button class="btn ghost sm" type="button" onclick="delLine(\'' +
+      (CAN.payments ? '<td><button class="btn ghost sm" type="button" onclick="delLine(\'' +
         l.id + '\')">Remove</button></td>' : '') +
       '</tr>';
   });
@@ -322,15 +357,15 @@ function routePanel(title, tranche, steps) {
       '<div class="route' + (s.status === 'Completed' ? ' done' : '') + '">' +
         '<div class="n">' + s.stepNo + '</div>' +
         '<div>' + esc(s.name) + '</div>' +
-        '<select ' + (EDIT ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
+        '<select ' + (CAN.routing ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
           s.stepNo + ',\'status\',this.value)">' +
           STEP_STATUSES.map(o => '<option' + (o === s.status ? ' selected' : '') +
             '>' + o + '</option>').join('') + '</select>' +
         '<input type="date" title="Date cleared" value="' + esc(s.date) + '" ' +
-          (EDIT ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
+          (CAN.routing ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
           s.stepNo + ',\'date\',this.value)"/>' +
         '<input type="date" title="Last visited" value="' + esc(s.lastVisited) + '" ' +
-          (EDIT ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
+          (CAN.routing ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
           s.stepNo + ',\'lastVisited\',this.value)"/>' +
       '</div>').join('') +
     '</div></div>';

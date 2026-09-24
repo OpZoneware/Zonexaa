@@ -88,7 +88,6 @@ const Projects = {
     const pmNames = SEED_USERS.filter(u => u.role === 'Project Manager'
       || u.role === 'Head of Projects & Operations' || u.role === 'Managing Director')
       .map(u => u.name);
-    const engineers = [''].concat(SEED_USERS.map(u => u.name));
 
     return '<input type="hidden" id="fOrigId" value="' + esc(p.id || '') + '"/>' +
       '<div class="form-grid">' +
@@ -121,8 +120,12 @@ const Projects = {
       '<div class="field"><label for="fPm">Project manager</label>' +
         '<select id="fPm">' + options(pmNames, p.pm) + '</select></div>' +
 
-      '<div class="field"><label for="fEngineer">Site engineer</label>' +
-        '<select id="fEngineer">' + options(engineers, p.engineer) + '</select></div>' +
+      /* Site engineers hold no login. The name is recorded for
+         reference; the PM reports on their behalf. */
+      '<div class="field"><label for="fEngineer">Site engineer ' +
+        '<em>(reports to the PM)</em></label>' +
+        '<input id="fEngineer" type="text" value="' + esc(p.engineer || '') +
+        '" placeholder="Name"/></div>' +
 
       '<div class="field"><label for="fAward">Award date</label>' +
         '<input id="fAward" type="date" value="' + esc(p.awardDate || '') + '"/></div>' +

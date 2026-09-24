@@ -67,6 +67,14 @@ function done(result) {
 }
 
 function useDirectory() {
+  /* Directory sign-in is a setup convenience only. Once the API is
+     connected it is switched off — a typed address is not a
+     credential, and the back end will reject it. */
+  if (API.connected()) {
+    msg.className = 'msg error';
+    msg.textContent = 'Google sign-in is unavailable. Check CONFIG.GOOGLE_CLIENT_ID.';
+    return;
+  }
   document.getElementById('form').style.display = '';
   fine.textContent =
     'Workspace sign-in activates once the OAuth client ID is configured. ' +
@@ -83,7 +91,9 @@ window.addEventListener('load', function () {
 
 document.getElementById('form').addEventListener('submit', function (e) {
   e.preventDefault();
-  done(Auth.signInByEmail(document.getElementById('email').value));
+  msg.className = 'msg';
+  msg.textContent = 'Checking…';
+  Auth.signInByEmail(document.getElementById('email').value).then(done);
 });
 </script>
 </body>

@@ -19,12 +19,70 @@ const Session = {
   /* May create, edit and archive projects */
   canManage() { return CAN_MANAGE.includes(this.role()); },
 
-  /* May edit records on a given project */
+  /* Assigned as project manager on this project */
+  isAssigned(project) {
+    const s = this.current();
+    if (!s || !project) return false;
+    return project.pm === s.name;
+  },
+
+  /* May edit records on a given project — any area */
   ownsProject(project) {
     if (this.isReadOnly()) return false;
     if (FULL_EDIT.includes(this.role())) return true;
-    const s = this.current();
-    return Boolean(project) && (project.pm === s.name || project.engineer === s.name);
+    return this.isAssigned(project);
+  },
+
+  /* Area-level permission. Roles in EDIT_RIGHTS hold it across every
+     project; the assigned PM holds it on their own projects. */
+  can(area, project) {
+    if (this.isReadOnly()) return false;
+    const role = this.role();
+    if ((EDIT_RIGHTS[area] || []).includes(role)) return true;
+    if (role === 'Project Manager' && this.isAssigned(project)) return true;
+    return false;
+  },
+
+  /* ---- Step-level ownership ----
+     A step is yours if the SOP names your role against it. Project
+     Managers hold it only on projects they are assigned to. Head of
+     P&O and IT Support may stamp anything, because somebody has to
+     be able to correct a wrong entry. */
+  ownsStep(ownerToken, project) {
+    const role = this.role();
+    if (!role) return false;
+    if (STEP_OVERSEERS.includes(role)) return true;
+    if (!stepOwnerRoles(ownerToken).includes(role)) return false;
+    if (ASSIGNED_ONLY.includes(role)) return this.isAssigned(project);
+    return true;
+  },
+
+  myOpenSteps(project, rows) {
+    return (rows || []).filter(r =>
+      this.ownsStep(r.role, project) && r.status !== 'Completed' && r.status !== 'N/A'
+    ).length;
+  },
+
+  /* Plain-language summary for the banner on the project page */
+  accessNote(project) {
+    if (this.isReadOnly()) {
+      return 'You can update the stage steps the SOP assigns to the MD. ' +
+             'Documents, payments and routing are read-only for you.';
+    }
+    const areas = ['stage', 'documents', 'payments', 'routing']
+      .filter(a => this.can(a, project));
+    if (!areas.length) {
+      return this.isAssigned(project)
+        ? 'Site records are not editable in this release. Other sections are read-only.'
+        : 'You are not assigned to this project.';
+    }
+    if (areas.length === 4) return '';
+    const label = { stage: 'the stage checklist', documents: 'the document checklist',
+                    payments: 'payments', routing: 'payment routing' };
+    const names = areas.map(a => label[a]);
+    const last = names.pop();
+    return 'You can edit ' + (names.length ? names.join(', ') + ' and ' + last : last) +
+           ' on this project. Other sections are read-only.';
   },
 
   signOut() { Auth.signOut(); }
