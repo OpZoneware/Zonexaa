@@ -91,8 +91,8 @@ const API = {
   /* ---------- account ---------- */
 
   /* No token yet at this point, so it goes direct. */
-  async login(username, password) {
-    const out = await this.jsonp('login', { username, password }, '');
+  async login(code) {
+    const out = await this.jsonp('login', { code }, '');
     if (!out) throw new Error('Empty response from the Zonexa server.');
     if (out.error) throw new Error(out.error);
     return out.data;                      // { token, user }
@@ -103,14 +103,6 @@ const API = {
   },
 
   async whoami() { return this.call('whoami'); },
-
-  async changePassword(currentPassword, newPassword) {
-    return this.call('changePassword', { currentPassword, newPassword });
-  },
-
-  async adminSetPassword(email, password) {
-    return this.call('adminSetPassword', { email, password });
-  },
 
   /* Health check. Run API.ping() in the browser console. */
   async ping() { return this.jsonp('ping', {}, '', 20000); },

@@ -1213,7 +1213,8 @@ const SEED_USERS = [
  { "id": "U-03", "name": "Olutimehin Daniel Gbenga", "email": "operations@redwarelimited.com", "role": "IT Support" },
  { "id": "U-04", "name": "Roseline Adeyemi", "email": "roseline@redwarelimited.com", "role": "Project Manager" },
  { "id": "U-05", "name": "Rokibat Adeyemo", "email": "rokibat@redwarelimited.com", "role": "Project Manager" },
- { "id": "U-06", "name": "Seyifunmi Alabi", "email": "seyifunmi@redwarelimited.com", "role": "Project Manager" }
+ { "id": "U-06", "name": "Seyifunmi Alabi", "email": "seyifunmi@redwarelimited.com", "role": "Project Manager" },
+ { "id": "U-07", "name": "Omowunmi", "email": "accounts@redwarelimited.com", "role": "Accountant" }
 ];
 
 const COMPANY = {

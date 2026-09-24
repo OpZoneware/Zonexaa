@@ -11,7 +11,7 @@ const CONFIG = {
   /* The Apps Script Web App URL. The only setting you must fill in.
      Deploy > New deployment > Web app, Execute as Me,
      Who has access: Anyone. Copy the /exec URL here. */
-  API_URL: 'https://script.google.com/macros/s/AKfycbz8ze2xd-ByHmoEO7Z2BXIvzJd4VFTtk_tYj9o-3MUdy3U9jgRMi1qDwOcWqH9nSeWq6g/exec',
+  API_URL: '',
 
   ORG:     'Zoneware Limited',
   SYSTEM:  'Zonexa',
@@ -101,14 +101,15 @@ const ROUTING = {
   ]
 };
 
-/* Four roles hold logins in this release. Site Engineers, the
-   Accountant and the Administrative Officer do not sign in — they
-   report to the Project Manager, who records their information. */
+/* Five roles hold logins. Site Engineers and the Administrative
+   Officer do not sign in — they report to the Project Manager, who
+   records their information. */
 const ROLES = [
-  'Managing Director',
-  'Head of Projects & Operations',
-  'IT Support',
-  'Project Manager'
+  'Managing Director',            // MD-
+  'Head of Projects & Operations',// PO-
+  'Project Manager',              // PM-
+  'IT Support',                   // IT-
+  'Accountant'                    // AC-
 ];
 
 /* Roles that may edit anything on any project */
@@ -123,8 +124,8 @@ const CAN_MANAGE = FULL_EDIT;
 const EDIT_RIGHTS = {
   stage:     FULL_EDIT.concat([]),
   documents: FULL_EDIT.concat([]),
-  payments:  FULL_EDIT.concat([]),
-  routing:   FULL_EDIT.concat([]),
+  payments:  FULL_EDIT.concat(['Accountant']),
+  routing:   FULL_EDIT.concat(['Accountant']),
   siteLog:   FULL_EDIT.concat([])
 };
 
@@ -139,10 +140,10 @@ const EDIT_RIGHTS = {
 const OWNER_TOKENS = {
   'PM':       ['Project Manager'],
   'MD':       ['Managing Director'],
-  /* Admin, Accounts and Engineer hold no logins in this release.
-     They pass their information to the assigned Project Manager. */
+  /* Admin and Engineer hold no logins. They pass their information to
+     the assigned Project Manager. Accounts does hold a login. */
   'Admin':    ['Project Manager'],
-  'Accounts': ['Project Manager'],
+  'Accounts': ['Accountant'],
   'Engineer': ['Project Manager'],
   'Ministry': ['Project Manager']
 };

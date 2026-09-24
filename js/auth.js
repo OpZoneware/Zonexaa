@@ -1,27 +1,20 @@
 /* ============================================================
    ZONEXA — Sign-in
    ------------------------------------------------------------
-   Username and password, checked by Apps Script against the Users
-   tab of the workbook.
+   One access code, checked by Apps Script against the Users tab.
 
-   Nothing is decided in the browser. The password is never stored
-   anywhere on this side; what comes back is a session token that
-   lasts 12 hours, and the role attached to it is read off the Sheet
-   by the server on every single request. Editing localStorage to
-   say "Managing Director" achieves nothing.
+   Nothing is decided in the browser. What comes back is a session
+   token lasting 12 hours, and the role attached to it is re-read
+   from the Sheet by the server on every single request. Editing
+   localStorage to say "Managing Director" achieves nothing.
    ============================================================ */
 
 const Auth = {
 
-  /* ---------- sign in ---------- */
+  async signIn(code) {
+    code = String(code || '').trim();
 
-  async signIn(username, password) {
-    username = String(username || '').trim();
-    password = String(password || '');
-
-    if (!username || !password) {
-      return { ok: false, error: 'Enter your username and password.' };
-    }
+    if (!code) return { ok: false, error: 'Enter your access code.' };
 
     if (!API.connected()) {
       return {
@@ -33,7 +26,7 @@ const Auth = {
 
     let result;
     try {
-      result = await API.login(username, password);
+      result = await API.login(code);
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -43,54 +36,21 @@ const Auth = {
     }
 
     Store.setSession({
-      id:       result.user.id,
-      name:     result.user.name,
-      email:    result.user.email,
-      username: result.user.username,
-      role:     result.user.role,
-      token:    result.token,
-      mustChangePassword: Boolean(result.user.mustChangePassword),
+      id:    result.user.id,
+      name:  result.user.name,
+      email: result.user.email,
+      role:  result.user.role,
+      token: result.token,
       signedInAt: new Date().toISOString()
     });
 
-    return { ok: true, mustChangePassword: Boolean(result.user.mustChangePassword) };
-  },
-
-  /* ---------- password ---------- */
-
-  async changePassword(currentPassword, newPassword, confirmPassword) {
-    if (String(newPassword).length < 8) {
-      return { ok: false, error: 'New password must be at least 8 characters.' };
-    }
-    if (newPassword !== confirmPassword) {
-      return { ok: false, error: 'The two new passwords do not match.' };
-    }
-    if (newPassword === currentPassword) {
-      return { ok: false, error: 'Choose a password you have not used before.' };
-    }
-
-    try {
-      await API.changePassword(currentPassword, newPassword);
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-
-    const s = Store.session() || {};
-    s.mustChangePassword = false;
-    Store.setSession(s);
     return { ok: true };
   },
-
-  mustChangePassword() {
-    const s = Store.session();
-    return Boolean(s && s.mustChangePassword);
-  },
-
-  /* ---------- sign out ---------- */
 
   async signOut() {
     try { await API.logout(); } catch (e) { /* leaving anyway */ }
     Store.clearSession();
+    localStorage.removeItem('zonexa.remember');
     location.href = 'index.html';
   },
 
@@ -98,5 +58,19 @@ const Auth = {
   expired() {
     Store.clearSession();
     location.replace('index.html?expired=1');
+  },
+
+  /* ---- convenience: remember the code on a personal device ---- */
+  remembered() {
+    try { return localStorage.getItem('zonexa.remember') || ''; }
+    catch (e) { return ''; }
+  },
+
+  remember(code) {
+    try { localStorage.setItem('zonexa.remember', code); } catch (e) {}
+  },
+
+  forget() {
+    try { localStorage.removeItem('zonexa.remember'); } catch (e) {}
   }
 };

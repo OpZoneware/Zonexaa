@@ -15,45 +15,27 @@
     <div class="brand-sub">Zoneware Limited</div>
 
     <h1>Sign in</h1>
-    <p class="sub">Use the username and password issued to you.</p>
+    <p class="sub">Enter the access code issued to you.</p>
 
-    <form id="form" autocomplete="on">
+    <form id="form" autocomplete="off">
       <div class="field">
-        <label for="username">Username</label>
-        <input id="username" type="text" required autocomplete="username"
-               autocapitalize="none" spellcheck="false"
-               placeholder="daniel"/>
+        <label for="code">Access code</label>
+        <input id="code" class="codebox" type="text" required
+               inputmode="text" autocapitalize="characters"
+               autocorrect="off" spellcheck="false"
+               maxlength="8" placeholder="MD-48210"/>
       </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <div class="pw">
-          <input id="password" type="password" required
-                 autocomplete="current-password" placeholder="••••••••"/>
-          <button type="button" class="peek" id="peek"
-                  aria-label="Show password">Show</button>
-        </div>
-      </div>
+      <label class="check">
+        <input type="checkbox" id="remember"/>
+        <span>Remember this code on this device</span>
+      </label>
       <button class="btn full" type="submit" id="go">Sign in</button>
-    </form>
-
-    <form id="changeForm" style="display:none">
-      <div class="field">
-        <label for="newPw">New password</label>
-        <input id="newPw" type="password" required minlength="8"
-               autocomplete="new-password" placeholder="At least 8 characters"/>
-      </div>
-      <div class="field">
-        <label for="newPw2">Confirm new password</label>
-        <input id="newPw2" type="password" required minlength="8"
-               autocomplete="new-password" placeholder="Type it again"/>
-      </div>
-      <button class="btn full" type="submit" id="go2">Set password and continue</button>
     </form>
 
     <div class="msg" id="msg" role="alert"></div>
 
     <p class="fineprint" id="fine">
-      Lost your password? Contact Daniel (IT Support) —
+      Lost your code? Contact Daniel (IT Support) —
       <a href="mailto:operations@redwarelimited.com">operations@redwarelimited.com</a>
     </p>
 
@@ -80,35 +62,49 @@
 <script src="js/auth.js"></script>
 <script src="js/shell.js"></script>
 <script>
-const msg   = document.getElementById('msg');
-const fine  = document.getElementById('fine');
-const form  = document.getElementById('form');
-const chg   = document.getElementById('changeForm');
-const go    = document.getElementById('go');
+const msg  = document.getElementById('msg');
+const fine = document.getElementById('fine');
+const form = document.getElementById('form');
+const box  = document.getElementById('code');
+const go   = document.getElementById('go');
+const rem  = document.getElementById('remember');
 
 if (new URLSearchParams(location.search).get('expired')) {
   show('Your session ended. Sign in again.', 'error');
 }
 
-/* Wake the Apps Script container while the user is still typing.
-   Without this, the first sign-in of the day waits on a cold start. */
+if (Store.session()) location.replace('board.html');
+
+/* Wake the Apps Script container while the user is still typing —
+   without this the first sign-in of the day waits on a cold start. */
 API.warmUp();
 
-if (Store.session() && !Auth.mustChangePassword()) location.replace('board.html');
-if (Store.session() && Auth.mustChangePassword()) forcedChange();
+/* Pre-fill on a device where the person chose to be remembered */
+const saved = Auth.remembered();
+if (saved) { box.value = saved; rem.checked = true; }
+box.focus();
 
 function show(text, kind) {
   msg.className = 'msg' + (kind ? ' ' + kind : '');
   msg.textContent = text;
 }
 
-/* ---- show / hide password ---- */
-document.getElementById('peek').addEventListener('click', function () {
-  const pw = document.getElementById('password');
-  const on = pw.type === 'password';
-  pw.type = on ? 'text' : 'password';
-  this.textContent = on ? 'Hide' : 'Show';
-  pw.focus();
+/* ---- format as they type: MD-48210 ----
+   Two letters then five digits. Letters are forced upper case and
+   anything that is not a letter in the first two positions, or a
+   digit after them, is dropped as it is typed. */
+box.addEventListener('input', function () {
+  const raw = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const letters = raw.slice(0, 2).replace(/[^A-Z]/g, '');
+  const digits  = raw.slice(letters.length).replace(/[^0-9]/g, '').slice(0, 5);
+  this.value = digits.length || raw.length > 2
+    ? letters + '-' + digits
+    : letters;
+});
+
+/* Pasting a code with spaces, line breaks or lowercase still works */
+box.addEventListener('paste', function () {
+  setTimeout(() => this.dispatchEvent(new Event('input')), 0);
 });
 
 /* ---- sign in ---- */
@@ -118,52 +114,20 @@ form.addEventListener('submit', async function (e) {
   go.textContent = 'Signing in…';
   show('Checking…');
 
-  /* If it runs long, say why rather than leaving a dead button */
   const slow = setTimeout(function () {
-    show('Still working — the server is waking up. This only happens ' +
-         'on the first sign-in after a quiet spell.');
+    show('Still working — the server is waking up. This only happens on ' +
+         'the first sign-in after a quiet spell.');
   }, 4000);
 
-  const result = await Auth.signIn(
-    document.getElementById('username').value,
-    document.getElementById('password').value
-  );
+  const result = await Auth.signIn(box.value);
 
   clearTimeout(slow);
   go.disabled = false;
   go.textContent = 'Sign in';
 
-  if (!result.ok) { show(result.error, 'error'); return; }
-  if (result.mustChangePassword) { forcedChange(); return; }
-  location.href = 'board.html';
-});
+  if (!result.ok) { show(result.error, 'error'); box.select(); return; }
 
-/* ---- first sign-in: password must be changed ---- */
-function forcedChange() {
-  form.style.display = 'none';
-  chg.style.display = '';
-  document.querySelector('.sub').textContent =
-    'This is your first sign-in. Choose a password only you know.';
-  fine.textContent = 'Minimum 8 characters.';
-  show('');
-  document.getElementById('newPw').focus();
-}
-
-chg.addEventListener('submit', async function (e) {
-  e.preventDefault();
-  const btn = document.getElementById('go2');
-  btn.disabled = true;
-  show('Saving…');
-
-  const result = await Auth.changePassword(
-    document.getElementById('password').value,
-    document.getElementById('newPw').value,
-    document.getElementById('newPw2').value
-  );
-
-  btn.disabled = false;
-
-  if (!result.ok) { show(result.error, 'error'); return; }
+  if (rem.checked) Auth.remember(box.value); else Auth.forget();
   location.href = 'board.html';
 });
 </script>
