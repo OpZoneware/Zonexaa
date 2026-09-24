@@ -23,6 +23,7 @@
   </div>
 
   <div class="meta-grid" id="pMeta" style="margin-bottom:22px"></div>
+  <div class="note" id="projectNote" hidden></div>
 
   <div class="tabs">
     <button class="on" type="button" onclick="tab('stage')"  id="tStage">Stage Checklist</button>
@@ -73,6 +74,9 @@ let CAN = { stage: false, documents: false, payments: false, routing: false };
 })();
 
 function header() {
+  const projectNote = document.getElementById('projectNote');
+  projectNote.hidden = !P.note;
+  projectNote.textContent = P.note || '';
   document.getElementById('pName').textContent = P.name;
   document.getElementById('pSub').textContent =
     P.id + ' · ' + P.client + ' · ' + P.location;
@@ -191,22 +195,32 @@ function setStep(step, field, value) {
 }
 
 /* ---------- documents ---------- */
-function drawDocs() {
-  const rows = Store.documents(P.id);
+async function drawDocs() {
+  const panel = document.getElementById('panelDocs');
+  panel.innerHTML = '<p class="empty">Loading documents…</p>';
+  let rows;
+  try {
+    rows = await API.documents(P.id, P.type);
+  } catch (err) {
+    panel.innerHTML = '<p class="note">Documents could not be loaded: ' + esc(err.message) +
+      ' <button class="btn ghost sm" type="button" onclick="drawDocs()">Retry</button></p>';
+    return;
+  }
   const sections = [...new Set(rows.map(r => r.section))];
   let html = '<div class="panel"><div class="panel-head">' +
     '<div><h2>Document Checklist</h2>' +
-    '<p>' + rows.length + ' documents required for this contract type. ' +
+    '<p>' + rows.length + ' checklist items and linked records. ' +
     'Records are held as links, not uploads.</p></div></div>' +
     '<div class="panel-body tight">';
 
   sections.forEach(sec => {
     const inSec = rows.filter(r => r.section === sec);
-    html += '<div class="docsec">' + esc(sec) + ' · ' + esc(inSec[0].sectionTitle) + '</div>';
+    html += '<div class="docsec">' + esc(sec) + ' · ' + esc(inSec[0].sectionTitle || 'Project files and folders') + '</div>';
     inSec.forEach(d => {
       html += '<div class="docrow">' +
         '<div>' + esc(d.name) +
-          (d.tranche ? ' <span class="chip grey">' + esc(d.tranche) + '</span>' : '') + '</div>' +
+          (d.tranche ? ' <span class="chip grey">' + esc(d.tranche) + '</span>' : '') +
+          (d.notes ? '<p class="who">' + esc(d.notes) + '</p>' : '') + '</div>' +
         '<select ' + (CAN.documents ? '' : 'disabled ') +
           'onchange="setDoc(\'' + escAttr(d.name) + '\',\'status\',this.value)">' +
           STEP_STATUSES.map(o => '<option' + (o === d.status ? ' selected' : '') +
@@ -214,8 +228,9 @@ function drawDocs() {
         '<input type="url" placeholder="Paste Drive or document link" value="' + esc(d.link) + '" ' +
           (CAN.documents ? '' : 'disabled ') +
           'onchange="setDoc(\'' + escAttr(d.name) + '\',\'link\',this.value)"/>' +
-        '<div>' + (d.link
-            ? '<a class="linkpill" target="_blank" rel="noopener" href="' + esc(d.link) + '">Open</a>'
+        '<div>' + (safeDocumentUrl(d.link)
+            ? '<a class="linkpill" target="_blank" rel="noopener noreferrer" href="' + esc(safeDocumentUrl(d.link)) + '">' +
+              (/drive\.google\.com\/drive\/folders\//.test(d.link) ? 'Open folder' : 'Open file') + '</a>'
             : '<span class="chip grey">No link</span>') + '</div>' +
       '</div>';
     });
@@ -226,11 +241,26 @@ function drawDocs() {
 
 function escAttr(s) { return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
-function setDoc(name, field, value) {
+function safeDocumentUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : '';
+  } catch (e) { return ''; }
+}
+
+async function setDoc(name, field, value) {
+  if (field === 'link' && value && !safeDocumentUrl(value)) {
+    toast('Enter a full http or https document link', 'error');
+    return;
+  }
   const patch = {}; patch[field] = value;
-  API.saveDocument(P.id, name, patch);
-  toast('Saved');
-  if (field === 'link') setTimeout(() => location.reload(), 500);
+  try {
+    await API.saveDocument(P.id, name, patch);
+    toast('Saved');
+    await drawDocs();
+  } catch (err) {
+    toast('Document was not saved: ' + err.message, 'error');
+  }
 }
 
 /* ---------- payments and BOQ ---------- */

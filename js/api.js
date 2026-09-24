@@ -219,9 +219,20 @@ const API = {
 
   /* ---------- document checklist ---------- */
 
-  async documents(projectId) {
-    if (this.connected()) return this.call('listDocuments', { projectId });
-    return Store.documents(projectId);
+  async documents(projectId, projectType) {
+    if (!this.connected()) return Store.documents(projectId);
+    const saved = await this.call('listDocuments', { projectId });
+    const requirements = DOC_REQUIREMENTS.filter(d => d.scope === 'project')
+      .filter(d => d.section !== 'E' || projectType === 'Facility Management');
+    const byName = new Map(saved.map(d => [d.name, d]));
+    const rows = requirements.map(d => Object.assign({ status: 'Not Started', link: '',
+      obtained: '', notes: '' }, d, byName.get(d.name) || {}));
+    const known = new Set(requirements.map(d => d.name));
+    saved.filter(d => !known.has(d.name)).forEach(d => rows.push(Object.assign({
+      section: 'Files', sectionTitle: 'Project files and folders', status: 'Under Review',
+      link: '', notes: ''
+    }, d)));
+    return rows;
   },
 
   async saveDocument(projectId, name, patch) {
