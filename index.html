@@ -53,7 +53,8 @@
     <div class="msg" id="msg" role="alert"></div>
 
     <p class="fineprint" id="fine">
-      Lost your password? The Head of Projects &amp; Operations can reset it.
+      Lost your password? Contact Daniel (IT Support) —
+      <a href="mailto:operations@redwarelimited.com">operations@redwarelimited.com</a>
     </p>
 
   </main>
@@ -89,6 +90,10 @@ if (new URLSearchParams(location.search).get('expired')) {
   show('Your session ended. Sign in again.', 'error');
 }
 
+/* Wake the Apps Script container while the user is still typing.
+   Without this, the first sign-in of the day waits on a cold start. */
+API.warmUp();
+
 if (Store.session() && !Auth.mustChangePassword()) location.replace('board.html');
 if (Store.session() && Auth.mustChangePassword()) forcedChange();
 
@@ -110,14 +115,23 @@ document.getElementById('peek').addEventListener('click', function () {
 form.addEventListener('submit', async function (e) {
   e.preventDefault();
   go.disabled = true;
+  go.textContent = 'Signing in…';
   show('Checking…');
+
+  /* If it runs long, say why rather than leaving a dead button */
+  const slow = setTimeout(function () {
+    show('Still working — the server is waking up. This only happens ' +
+         'on the first sign-in after a quiet spell.');
+  }, 4000);
 
   const result = await Auth.signIn(
     document.getElementById('username').value,
     document.getElementById('password').value
   );
 
+  clearTimeout(slow);
   go.disabled = false;
+  go.textContent = 'Sign in';
 
   if (!result.ok) { show(result.error, 'error'); return; }
   if (result.mustChangePassword) { forcedChange(); return; }

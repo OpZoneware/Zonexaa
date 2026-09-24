@@ -47,9 +47,11 @@ const API = {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true; cleanup();
-        reject(new Error('The Zonexa server did not respond. Check CONFIG.API_URL ' +
-                         'and that the deployment access is set to Anyone.'));
-      }, timeoutMs || 25000);
+        reject(new Error(
+          'The server took too long to answer. This is usually the first ' +
+          'request after a quiet spell — try once more. If it keeps ' +
+          'happening, check that the deployment access is set to Anyone.'));
+      }, timeoutMs || 60000);
 
       window[name] = (res) => {
         if (settled) return;
@@ -111,7 +113,22 @@ const API = {
   },
 
   /* Health check. Run API.ping() in the browser console. */
-  async ping() { return this.jsonp('ping', {}, '', 12000); },
+  async ping() { return this.jsonp('ping', {}, '', 20000); },
+
+  /* ------------------------------------------------------------
+     Apps Script shuts an idle project down. The first request after
+     that pays a cold start of several seconds, which is what makes
+     the very first sign-in of the morning feel broken.
+
+     This fires a cheap ping the moment the sign-in page loads, so
+     the container is already awake by the time anyone finishes
+     typing their password. It is deliberately silent — if it fails,
+     nothing is shown and the real request reports the problem.
+     ------------------------------------------------------------ */
+  warmUp() {
+    if (!this.connected()) return;
+    this.jsonp('ping', {}, '', 20000).catch(() => {});
+  },
 
   /* ---------- projects ---------- */
 
