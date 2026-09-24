@@ -10,12 +10,12 @@ const CONFIG = {
 
   /* Apps Script Web App URL.
      Deploy > New deployment > Web app, then paste the URL here. */
-  API_URL: '',
+  API_URL: 'https://script.google.com/macros/s/AKfycbxemMbjnACimZTjDGUkY68ykOU2JOPBYm3Y1ox0h3DuiZLeyltGp4AyRsGpeDdvy0okhA/exec',
 
   /* Google Cloud OAuth Client ID (Web application).
      Console > APIs & Services > Credentials > Create OAuth client ID.
      Leave blank to fall back to directory sign-in during setup. */
-  GOOGLE_CLIENT_ID: '',
+  GOOGLE_CLIENT_ID: '870128330816-dth54pd32eqgib6apk3n9reghpbosgaa.apps.googleusercontent.com',
 
   /* Only addresses on these domains may sign in. */
   ALLOWED_DOMAINS: ['redwarelimited.com', 'zonewareltd.com'],
