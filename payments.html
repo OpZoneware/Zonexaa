@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Payments &amp; Deductions · Zonexa</title>
+<meta name="theme-color" content="#0a1f2c"/>
+<link rel="stylesheet" href="css/app.css"/>
+</head>
+<body>
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Payments &amp; Deductions</h1>
+      <p>Portfolio cash position across all active contracts</p>
+    </div>
+  </div>
+
+  <div class="kpi-row" id="kpis"></div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>Deduction schedule</h2>
+      <p>Applied to every payment tranche. Two variable rows are held open because
+         rates differ by ministry.</p></div>
+    </div>
+    <div class="panel-body tight" id="rates"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>Tranche position by project</h2>
+      <p>Gross, statutory deductions and net disbursement per contract.</p></div>
+    </div>
+    <div class="panel-body tight" id="tranches"></div>
+  </div>
+
+  <div class="footer" id="foot"></div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/shell.js"></script>
+<script>
+(async function () {
+  const s = Session.require();
+  if (!s) return;
+  Shell.render('payments');
+
+  const rows = await API.projects();
+  const withValue = rows.filter(p => Number(p.value) > 0);
+
+  const portfolio = withValue.reduce((a, p) => a + p.value, 0);
+  let advReceived = 0, advDue = 0, balDue = 0, deductions = 0;
+
+  withValue.forEach(p => {
+    const a = Cost.tranche(p.value, p.advancePct);
+    const b = Cost.tranche(p.value, p.balancePct);
+    deductions += a.total + b.total;
+    if (p.advance === 'Received') advReceived += a.net; else advDue += a.net;
+    if (p.balance !== 'Received') balDue += b.net;
+  });
+
+  document.getElementById('kpis').innerHTML = [
+    ['Portfolio value', money(portfolio)],
+    ['Statutory deductions', money(deductions)],
+    ['Advance received', money(advReceived)],
+    ['Advance outstanding', money(advDue)],
+    ['Balance outstanding', money(balDue)],
+    ['Effective deduction', (Cost.totalRate() * 100).toFixed(2) + '%']
+  ].map(k => '<div class="kpi"><span>' + k[0] + '</span><b>' + k[1] + '</b></div>').join('');
+
+  document.getElementById('rates').innerHTML =
+    '<table class="z"><thead><tr><th>Fee or tax</th><th class="num">Rate</th>' +
+    '<th>Authority</th><th>Deducted at source</th></tr></thead><tbody>' +
+    DEDUCTIONS.map(d => '<tr><td>' + esc(d.fee) + '</td>' +
+      '<td class="num">' + (d.rate * 100).toFixed(2) + '%</td>' +
+      '<td>' + esc(d.authority) + '</td>' +
+      '<td>' + (d.atSource ? 'Yes' : 'No') + '</td></tr>').join('') +
+    '<tr><td><b>Total</b></td><td class="num"><b>' + (Cost.totalRate() * 100).toFixed(2) +
+    '%</b></td><td colspan="2"></td></tr></tbody></table>';
+
+  document.getElementById('tranches').innerHTML =
+    '<table class="z"><thead><tr><th>Project</th><th>Tranche</th>' +
+    '<th class="num">Gross</th><th class="num">Deductions</th><th class="num">Net</th>' +
+    '<th>Status</th></tr></thead><tbody>' +
+    withValue.map(p => {
+      const a = Cost.tranche(p.value, p.advancePct);
+      const b = Cost.tranche(p.value, p.balancePct);
+      return ['<tr class="clickable" onclick="go(\'' + p.id + '\')"><td rowspan="2"><b>' +
+        esc(p.name) + '</b><br><span class="chip grey">' + esc(p.client) + '</span></td>' +
+        '<td>Advance ' + Math.round(p.advancePct * 100) + '%</td>' +
+        '<td class="num">' + naira(a.gross) + '</td>' +
+        '<td class="num">−' + naira(a.total) + '</td>' +
+        '<td class="num"><b>' + naira(a.net) + '</b></td>' +
+        '<td><span class="chip ' + (p.advance === 'Received' ? 'green' : 'grey') + '">' +
+          esc(p.advance) + '</span></td></tr>',
+        '<tr class="clickable" onclick="go(\'' + p.id + '\')">' +
+        '<td>Balance ' + Math.round(p.balancePct * 100) + '%</td>' +
+        '<td class="num">' + naira(b.gross) + '</td>' +
+        '<td class="num">−' + naira(b.total) + '</td>' +
+        '<td class="num"><b>' + naira(b.net) + '</b></td>' +
+        '<td><span class="chip ' + (p.balance === 'Received' ? 'green' : 'grey') + '">' +
+          esc(p.balance) + '</span></td></tr>'].join('');
+    }).join('') + '</tbody></table>';
+
+  document.getElementById('foot').textContent =
+    CONFIG.SYSTEM + ' v' + CONFIG.VERSION + ' · ' + CONFIG.ORG;
+})();
+
+function go(id) { location.href = 'project.html?id=' + encodeURIComponent(id); }
+</script>
+</body>
+</html>

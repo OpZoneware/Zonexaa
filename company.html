@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Company Compliance · Zonexa</title>
+<meta name="theme-color" content="#0a1f2c"/>
+<link rel="stylesheet" href="css/app.css"/>
+</head>
+<body>
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Company Compliance</h1>
+      <p>Registrations and statutory documents held at company level. Renewed once,
+         referenced by every project.</p>
+    </div>
+  </div>
+
+  <div class="meta-grid" id="meta" style="margin-bottom:22px"></div>
+
+  <div class="note">
+    <b>Why this sits here.</b> Procurement registration, tax clearances and development levies
+    belong to the company rather than to any single project, so a renewal updates in one place
+    instead of being repeated on every contract file.
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>Statutory register</h2>
+      <p>Each item tracked with its expiry date and supporting link.</p></div>
+    </div>
+    <div class="panel-body tight" id="docs"></div>
+  </div>
+
+  <div class="footer" id="foot"></div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/shell.js"></script>
+<script>
+(function () {
+  const s = Session.require();
+  if (!s) return;
+  Shell.render('company');
+
+  document.getElementById('meta').innerHTML = [
+    ['Company', COMPANY.name],
+    ['Parent', COMPANY.parent],
+    ['Registered address', COMPANY.address],
+    ['PPA class', COMPANY.ppaClass],
+    ['PPA expiry', COMPANY.ppaExpiry ? fmtDate(COMPANY.ppaExpiry) : 'To confirm']
+  ].map(x => '<div><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('');
+
+  const entityDocs = DOC_REQUIREMENTS.filter(d => d.scope === 'entity');
+  const canEdit = Session.canEdit() && !Session.isReadOnly();
+
+  document.getElementById('docs').innerHTML =
+    '<table class="z"><thead><tr><th>Document</th><th>Status</th>' +
+    '<th>Expiry</th><th>Link</th></tr></thead><tbody>' +
+    entityDocs.map((d, i) =>
+      '<tr><td>' + esc(d.name) + '</td>' +
+      '<td><select ' + (canEdit ? '' : 'disabled ') + 'data-i="' + i + '">' +
+        STEP_STATUSES.map(o => '<option>' + o + '</option>').join('') + '</select></td>' +
+      '<td><input type="date" ' + (canEdit ? '' : 'disabled ') + '/></td>' +
+      '<td><input type="url" placeholder="Document link" ' + (canEdit ? '' : 'disabled ') +
+      '/></td></tr>').join('') +
+    '</tbody></table>';
+
+  document.getElementById('foot').textContent =
+    CONFIG.SYSTEM + ' v' + CONFIG.VERSION + ' · ' + CONFIG.ORG;
+})();
+</script>
+</body>
+</html>

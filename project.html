@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Project · Zonexa</title>
+<meta name="theme-color" content="#0a1f2c"/>
+<link rel="stylesheet" href="css/app.css"/>
+</head>
+<body>
+
+<main class="main">
+  <a class="back" href="board.html">&larr; Back to board</a>
+
+  <div class="page-head">
+    <div>
+      <h1 id="pName">Loading…</h1>
+      <p id="pSub"></p>
+    </div>
+    <div class="spacer"></div>
+    <div id="pActions" class="row-actions"></div>
+    <div id="pStatus"></div>
+  </div>
+
+  <div class="meta-grid" id="pMeta" style="margin-bottom:22px"></div>
+
+  <div class="tabs">
+    <button class="on" type="button" onclick="tab('stage')"  id="tStage">Stage Checklist</button>
+    <button type="button" onclick="tab('docs')"    id="tDocs">Documents</button>
+    <button type="button" onclick="tab('pay')"     id="tPay">Payments &amp; BOQ</button>
+    <button type="button" onclick="tab('route')"   id="tRoute">Payment Routing</button>
+  </div>
+
+  <div id="panelStage"></div>
+  <div id="panelDocs"  style="display:none"></div>
+  <div id="panelPay"   style="display:none"></div>
+  <div id="panelRoute" style="display:none"></div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/projects.js"></script>
+<script>
+let P = null, EDIT = false;
+
+(async function () {
+  const s = Session.require();
+  if (!s) return;
+  Shell.render('board');
+
+  P = await API.project(qs('id'));
+  if (!P) {
+    document.getElementById('pName').textContent = 'Project not found';
+    return;
+  }
+  EDIT = Session.ownsProject(P) && !Session.isReadOnly();
+
+  header();
+  drawStage();
+  drawDocs();
+  drawPay();
+  drawRoute();
+})();
+
+function header() {
+  document.getElementById('pName').textContent = P.name;
+  document.getElementById('pSub').textContent =
+    P.id + ' · ' + P.client + ' · ' + P.location;
+  if (Session.canManage()) {
+    document.getElementById('pActions').innerHTML =
+      '<button class="btn ghost sm" type="button" onclick="Projects.openEdit(P)">Edit</button>' +
+      (P.archived
+        ? '<button class="btn sm" type="button" onclick="Projects.restore(\'' + P.id + '\')">Restore</button>'
+        : '<button class="btn ghost sm" type="button" onclick="Projects.openArchive(P)">Archive</button>');
+  }
+
+  document.getElementById('pStatus').innerHTML =
+    '<span class="chip ' + (STATUS_TONE[P.status] || 'grey') + '" ' +
+    'style="font-size:11.5px;padding:6px 12px">' + esc(P.status) + '</span>';
+
+  const m = [
+    ['Contract value', P.value ? naira(P.value) : '—'],
+    ['Contract type', P.type],
+    ['Project manager', P.pm],
+    ['Site engineer', P.engineer || '—'],
+    ['Award date', fmtDate(P.awardDate)],
+    ['Module', P.module + ' of 6'],
+    ['SOP progress', (P.pctComplete || 0) + '% · ' + P.stepsDone + '/' + P.stepsTotal],
+    ['Retention ends', fmtDate(P.retentionEnd)]
+  ];
+  document.getElementById('pMeta').innerHTML = m.map(x =>
+    '<div><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('');
+
+  if (!EDIT) {
+    document.querySelector('.tabs').insertAdjacentHTML('afterend',
+      '<div class="note"><b>Read only.</b> ' +
+      (Session.isReadOnly()
+        ? 'Managing Director access is view-only across all projects.'
+        : 'You are not assigned to this project.') + '</div>');
+  }
+}
+
+function tab(which) {
+  ['stage','docs','pay','route'].forEach(t => {
+    document.getElementById('panel' + t[0].toUpperCase() + t.slice(1)).style.display =
+      t === which ? '' : 'none';
+    document.getElementById('t' + t[0].toUpperCase() + t.slice(1))
+      .classList.toggle('on', t === which);
+  });
+}
+
+/* ---------- stage checklist ---------- */
+function drawStage() {
+  const rows = Store.stageProgress(P.id);
+  const modules = [...new Set(rows.map(r => r.module))].sort();
+  let html = '';
+
+  modules.forEach(m => {
+    const inMod = rows.filter(r => r.module === m);
+    const done = inMod.filter(r => r.status === 'Completed').length;
+    const open = m === P.module ? ' open' : '';
+    html += '<section class="module' + open + '">' +
+      '<div class="module-head" onclick="this.parentNode.classList.toggle(\'open\')">' +
+        '<span class="caret">&#9654;</span>' +
+        '<h3>Module ' + m + ' — ' + esc(inMod[0].moduleTitle) + '</h3>' +
+        '<span class="prog">' + done + ' / ' + inMod.length + '</span>' +
+      '</div><div class="module-body">' +
+      inMod.map(r =>
+        '<div class="step">' +
+          '<div class="no">' + esc(r.step) + '</div>' +
+          '<div><div class="task">' + esc(r.task) + '</div>' +
+            '<div class="who">' + esc(r.role || '') + '</div></div>' +
+          '<select ' + (EDIT ? '' : 'disabled ') +
+            'onchange="setStep(\'' + r.step + '\',\'status\',this.value)">' +
+            STEP_STATUSES.map(o => '<option' + (o === r.status ? ' selected' : '') +
+              '>' + o + '</option>').join('') + '</select>' +
+          '<input type="date" value="' + esc(r.actual) + '" ' + (EDIT ? '' : 'disabled ') +
+            'onchange="setStep(\'' + r.step + '\',\'actual\',this.value)"/>' +
+          '<input type="url" placeholder="Evidence link" value="' + esc(r.evidence) + '" ' +
+            (EDIT ? '' : 'disabled ') +
+            'onchange="setStep(\'' + r.step + '\',\'evidence\',this.value)"/>' +
+        '</div>').join('') +
+      '</div></section>';
+  });
+
+  document.getElementById('panelStage').innerHTML = html;
+}
+
+function setStep(step, field, value) {
+  const patch = {}; patch[field] = value;
+  API.saveStage(P.id, step, patch);
+  toast('Saved');
+  if (field === 'status') setTimeout(() => location.reload(), 500);
+}
+
+/* ---------- documents ---------- */
+function drawDocs() {
+  const rows = Store.documents(P.id);
+  const sections = [...new Set(rows.map(r => r.section))];
+  let html = '<div class="panel"><div class="panel-head">' +
+    '<div><h2>Document Checklist</h2>' +
+    '<p>' + rows.length + ' documents required for this contract type. ' +
+    'Records are held as links, not uploads.</p></div></div>' +
+    '<div class="panel-body tight">';
+
+  sections.forEach(sec => {
+    const inSec = rows.filter(r => r.section === sec);
+    html += '<div class="docsec">' + esc(sec) + ' · ' + esc(inSec[0].sectionTitle) + '</div>';
+    inSec.forEach(d => {
+      html += '<div class="docrow">' +
+        '<div>' + esc(d.name) +
+          (d.tranche ? ' <span class="chip grey">' + esc(d.tranche) + '</span>' : '') + '</div>' +
+        '<select ' + (EDIT ? '' : 'disabled ') +
+          'onchange="setDoc(\'' + escAttr(d.name) + '\',\'status\',this.value)">' +
+          STEP_STATUSES.map(o => '<option' + (o === d.status ? ' selected' : '') +
+            '>' + o + '</option>').join('') + '</select>' +
+        '<input type="url" placeholder="Paste Drive or document link" value="' + esc(d.link) + '" ' +
+          (EDIT ? '' : 'disabled ') +
+          'onchange="setDoc(\'' + escAttr(d.name) + '\',\'link\',this.value)"/>' +
+        '<div>' + (d.link
+            ? '<a class="linkpill" target="_blank" rel="noopener" href="' + esc(d.link) + '">Open</a>'
+            : '<span class="chip grey">No link</span>') + '</div>' +
+      '</div>';
+    });
+  });
+
+  document.getElementById('panelDocs').innerHTML = html + '</div></div>';
+}
+
+function escAttr(s) { return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+function setDoc(name, field, value) {
+  const patch = {}; patch[field] = value;
+  API.saveDocument(P.id, name, patch);
+  toast('Saved');
+  if (field === 'link') setTimeout(() => location.reload(), 500);
+}
+
+/* ---------- payments and BOQ ---------- */
+function drawPay() {
+  const adv = Cost.tranche(P.value, P.advancePct);
+  const bal = Cost.tranche(P.value, P.balancePct);
+
+  let html = '<div class="grid2">' +
+    trancheCard('Advance payment', P.advancePct, adv) +
+    trancheCard('Balance payment', P.balancePct, bal) +
+    '</div>';
+
+  html += '<div class="panel"><div class="panel-head">' +
+    '<div><h2>Bill of Quantities — cost ceiling</h2>' +
+    '<p>Per line: value less tax less company margin gives the vendor ceiling. ' +
+    'Tax varies by ministry.</p></div><div class="spacer"></div>' +
+    (EDIT ? '<button class="btn sm" type="button" onclick="addLine()">Add line</button>' : '') +
+    '</div><div class="panel-body tight" id="boqBody"></div></div>';
+
+  document.getElementById('panelPay').innerHTML = html;
+  drawBoq();
+}
+
+function trancheCard(title, pct, t) {
+  return '<div class="panel"><div class="panel-head"><div><h2>' + title + '</h2>' +
+    '<p>' + Math.round(pct * 100) + '% of contract value</p></div></div>' +
+    '<div class="panel-body tight"><table class="z"><tbody>' +
+    '<tr><td>Gross amount</td><td class="num"><b>' + naira(t.gross) + '</b></td></tr>' +
+    t.lines.map(l => '<tr><td>' + esc(l.fee) + ' <span class="chip grey">' +
+      (l.rate * 100).toFixed(2) + '%</span></td><td class="num">−' + naira(l.amount) +
+      '</td></tr>').join('') +
+    '<tr><td><b>Total deductions</b></td><td class="num"><b>−' + naira(t.total) +
+      '</b></td></tr>' +
+    '<tr><td><b>Net disbursed</b></td><td class="num"><b style="color:var(--green)">' +
+      naira(t.net) + '</b></td></tr>' +
+    '</tbody></table></div></div>';
+}
+
+function drawBoq() {
+  const lines = Store.boq(P.id);
+  const body = document.getElementById('boqBody');
+  if (!body) return;
+
+  if (!lines.length) {
+    body.innerHTML = '<div class="blank" style="border:0;background:transparent">' +
+      '<h3>No BOQ lines yet</h3><p>Add each trade package to calculate its vendor ceiling.</p></div>';
+    return;
+  }
+
+  let tv = 0, tt = 0, tm = 0, tc = 0;
+  let html = '<table class="z"><thead><tr>' +
+    '<th>Trade / item</th><th class="num">BOQ value</th><th class="num">Tax %</th>' +
+    '<th class="num">Tax</th><th class="num">Margin %</th><th class="num">Margin</th>' +
+    '<th class="num">Vendor ceiling</th>' + (EDIT ? '<th></th>' : '') +
+    '</tr></thead><tbody>';
+
+  lines.forEach(l => {
+    const c = Cost.line(l.value, l.taxRate, l.marginRate);
+    tv += c.value; tt += c.tax; tm += c.margin; tc += c.ceiling;
+    html += '<tr>' +
+      '<td>' + esc(l.name) + '</td>' +
+      '<td class="num">' + naira(c.value) + '</td>' +
+      '<td class="num">' + (l.taxRate * 100).toFixed(1) + '%</td>' +
+      '<td class="num">' + naira(c.tax) + '</td>' +
+      '<td class="num">' + (l.marginRate * 100).toFixed(1) + '%</td>' +
+      '<td class="num">' + naira(c.margin) + '</td>' +
+      '<td class="num"><b style="color:var(--green)">' + naira(c.ceiling) + '</b></td>' +
+      (EDIT ? '<td><button class="btn ghost sm" type="button" onclick="delLine(\'' +
+        l.id + '\')">Remove</button></td>' : '') +
+      '</tr>';
+  });
+
+  html += '</tbody></table>' +
+    '<div class="boq-total">' +
+    '<div><span>Total BOQ value</span><b>' + naira(tv) + '</b></div>' +
+    '<div><span>Total tax</span><b>' + naira(tt) + '</b></div>' +
+    '<div><span>Company margin</span><b>' + naira(tm) + '</b></div>' +
+    '<div><span>Vendor budget</span><b style="color:var(--green)">' + naira(tc) + '</b></div>' +
+    '</div>';
+
+  body.innerHTML = html;
+}
+
+function addLine() {
+  const name = prompt('Trade or item (e.g. Roofing, Windows, Doors)');
+  if (!name) return;
+  const value = Number(prompt('BOQ value in naira', '0'));
+  if (!value) return;
+  const tax = Number(prompt('Tax rate %', String(COST_MODEL.defaultTaxRate * 100))) / 100;
+  const margin = Number(prompt('Company margin %',
+    String(COST_MODEL.defaultMarginRate * 100))) / 100;
+
+  API.saveBoqLine(P.id, {
+    id: 'L' + Date.now(),
+    name: name,
+    value: value,
+    taxRate: isNaN(tax) ? COST_MODEL.defaultTaxRate : tax,
+    marginRate: isNaN(margin) ? COST_MODEL.defaultMarginRate : margin
+  });
+  drawBoq();
+  toast('Line added');
+}
+
+function delLine(id) {
+  API.deleteBoqLine(P.id, id);
+  drawBoq();
+  toast('Line removed');
+}
+
+/* ---------- routing ---------- */
+function drawRoute() {
+  const r = Store.routing(P.id);
+  document.getElementById('panelRoute').innerHTML =
+    routePanel('Advance payment routing', 'advance', r.advance) +
+    routePanel('Final balance routing', 'balance', r.balance);
+}
+
+function routePanel(title, tranche, steps) {
+  return '<div class="panel"><div class="panel-head"><div><h2>' + title + '</h2>' +
+    '<p>Files move when a desk is attended in person. Record the visit date, not only the status.</p>' +
+    '</div></div><div class="panel-body tight">' +
+    steps.map(s =>
+      '<div class="route' + (s.status === 'Completed' ? ' done' : '') + '">' +
+        '<div class="n">' + s.stepNo + '</div>' +
+        '<div>' + esc(s.name) + '</div>' +
+        '<select ' + (EDIT ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
+          s.stepNo + ',\'status\',this.value)">' +
+          STEP_STATUSES.map(o => '<option' + (o === s.status ? ' selected' : '') +
+            '>' + o + '</option>').join('') + '</select>' +
+        '<input type="date" title="Date cleared" value="' + esc(s.date) + '" ' +
+          (EDIT ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
+          s.stepNo + ',\'date\',this.value)"/>' +
+        '<input type="date" title="Last visited" value="' + esc(s.lastVisited) + '" ' +
+          (EDIT ? '' : 'disabled ') + 'onchange="setRoute(\'' + tranche + '\',' +
+          s.stepNo + ',\'lastVisited\',this.value)"/>' +
+      '</div>').join('') +
+    '</div></div>';
+}
+
+function setRoute(tranche, stepNo, field, value) {
+  const patch = {}; patch[field] = value;
+  API.saveRouting(P.id, tranche, stepNo, patch);
+  toast('Saved');
+  if (field === 'status') setTimeout(drawRoute, 300);
+}
+</script>
+</body>
+</html>

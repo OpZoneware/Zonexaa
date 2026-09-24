@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Archive · Zonexa</title>
+<meta name="theme-color" content="#0a1f2c"/>
+<link rel="stylesheet" href="css/app.css"/>
+</head>
+<body>
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Archive</h1>
+      <p>Closed, cancelled and superseded projects. Records are retained in full
+         and can be restored at any time.</p>
+    </div>
+  </div>
+
+  <div class="kpi-row" id="kpis"></div>
+  <div id="content"><div class="loading">Loading…</div></div>
+
+  <div class="footer" id="foot"></div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/projects.js"></script>
+<script>
+(async function () {
+  const s = Session.require();
+  if (!s) return;
+  Shell.render('archive');
+
+  const rows = await API.archived();
+  const value = rows.reduce((a, p) => a + (Number(p.value) || 0), 0);
+
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><span>Archived projects</span><b>' + rows.length + '</b></div>' +
+    '<div class="kpi"><span>Combined value</span><b>' + money(value) + '</b></div>';
+
+  if (!rows.length) {
+    document.getElementById('content').innerHTML =
+      '<div class="blank"><h3>Nothing archived</h3>' +
+      '<p>Projects archived from the board will be listed here.</p></div>';
+  } else {
+    document.getElementById('content').innerHTML =
+      '<div class="table-wrap"><table class="z"><thead><tr>' +
+      '<th>Project</th><th>Client</th><th>Project manager</th>' +
+      '<th class="num">Contract value</th><th>Reason</th><th>Archived</th>' +
+      (Session.canManage() ? '<th></th>' : '') +
+      '</tr></thead><tbody>' +
+      rows.map(p =>
+        '<tr>' +
+        '<td><a href="project.html?id=' + encodeURIComponent(p.id) + '"><b>' +
+          esc(p.name) + '</b></a><br><span class="archived-badge">' + esc(p.id) + '</span></td>' +
+        '<td>' + esc(p.client) + '</td>' +
+        '<td>' + esc(p.pm || '—') + '</td>' +
+        '<td class="num">' + (p.value ? naira(p.value) : '—') + '</td>' +
+        '<td>' + esc(p.archiveReason || '—') + '</td>' +
+        '<td>' + fmtDate(p.archivedAt) + '<br><span class="chip grey">' +
+          esc(p.archivedBy || '') + '</span></td>' +
+        (Session.canManage()
+          ? '<td><button class="btn ghost sm" type="button" onclick="Projects.restore(\'' +
+            p.id + '\')">Restore</button></td>'
+          : '') +
+        '</tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  document.getElementById('foot').textContent =
+    CONFIG.SYSTEM + ' v' + CONFIG.VERSION + ' · ' + CONFIG.ORG;
+})();
+</script>
+</body>
+</html>

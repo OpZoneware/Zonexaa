@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Project Board · Zonexa</title>
+<meta name="theme-color" content="#0a1f2c"/>
+<link rel="stylesheet" href="css/app.css"/>
+</head>
+<body>
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Project Board</h1>
+      <p id="sub">Loading…</p>
+    </div>
+    <div class="spacer"></div>
+    <div class="toggle">
+      <button id="bBoard" class="on" type="button" onclick="setView('board')">Board</button>
+      <button id="bTable" type="button" onclick="setView('table')">Table</button>
+    </div>
+    <button class="btn sm" type="button" id="btnNew"
+            style="display:none" onclick="Projects.openNew()">+ New project</button>
+  </div>
+
+  <div class="kpi-row" id="kpis"></div>
+
+  <div class="filters">
+    <input id="q" type="search" placeholder="Search project or client…" style="min-width:230px"/>
+    <select id="fSector"><option value="">All sectors</option></select>
+    <select id="fPM"><option value="">All project managers</option></select>
+    <select id="fType"><option value="">All contract types</option></select>
+  </div>
+
+  <div id="content"><div class="loading">Loading…</div></div>
+
+  <div class="footer" id="foot"></div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/projects.js"></script>
+<script>
+let ROWS = [];
+let VIEW = qs('view') === 'table' ? 'table' : 'board';
+
+(async function () {
+  const s = Session.require();
+  if (!s) return;
+  Shell.render(VIEW === 'table' ? 'table' : 'board');
+  sync();
+  if (Session.canManage()) document.getElementById('btnNew').style.display = '';
+
+  ROWS = await API.projects();
+  document.getElementById('sub').textContent =
+    ROWS.length + ' project' + (ROWS.length === 1 ? '' : 's') + ' · ' + s.role;
+
+  fillFilters();
+  drawKpis();
+  draw();
+
+  ['q','fSector','fPM','fType'].forEach(id =>
+    document.getElementById(id).addEventListener('input', draw));
+
+  document.getElementById('foot').textContent =
+    CONFIG.SYSTEM + ' v' + CONFIG.VERSION + ' · ' + CONFIG.ORG +
+    (API.connected() ? ' · Connected to Google Workspace' : ' · Local records');
+})();
+
+function fillFilters() {
+  const add = (id, values) => {
+    document.getElementById(id).insertAdjacentHTML('beforeend',
+      [...new Set(values.filter(Boolean))].sort()
+        .map(v => '<option>' + esc(v) + '</option>').join(''));
+  };
+  add('fSector', ROWS.map(p => p.sector));
+  add('fPM',     ROWS.map(p => p.pm));
+  add('fType',   ROWS.map(p => p.type));
+}
+
+function filtered() {
+  const q  = document.getElementById('q').value.trim().toLowerCase();
+  const fs = document.getElementById('fSector').value;
+  const fp = document.getElementById('fPM').value;
+  const ft = document.getElementById('fType').value;
+  return ROWS.filter(p => {
+    if (fs && p.sector !== fs) return false;
+    if (fp && p.pm !== fp) return false;
+    if (ft && p.type !== ft) return false;
+    if (q && !((p.name + ' ' + p.client).toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function drawKpis() {
+  const total  = ROWS.reduce((s, p) => s + (Number(p.value) || 0), 0);
+  const active = ROWS.filter(p => p.status.indexOf('Active') === 0).length;
+  const risk   = ROWS.filter(p => p.status === 'Active — At Risk'
+                               || p.status === 'Active — Delayed').length;
+  const closing= ROWS.filter(p => p.status === 'Snagging / Close-out').length;
+  const bidding= ROWS.filter(p => p.status === 'Bidding').length;
+  const flags  = ROWS.reduce((s, p) => s + (p.flagged || 0), 0);
+
+  document.getElementById('kpis').innerHTML = [
+    ['Portfolio value', money(total), ''],
+    ['Projects', ROWS.length, ''],
+    ['Active', active, ''],
+    ['At risk / delayed', risk, risk ? 'var(--red)' : ''],
+    ['In close-out', closing, ''],
+    ['In pursuit', bidding, ''],
+    ['Flagged steps', flags, flags ? 'var(--amber)' : '']
+  ].map(k => '<div class="kpi"><span>' + k[0] + '</span><b' +
+      (k[2] ? ' style="color:' + k[2] + '"' : '') + '>' + k[1] + '</b></div>').join('');
+}
+
+function draw() {
+  const rows = filtered();
+  const el = document.getElementById('content');
+  if (!rows.length) {
+    el.innerHTML = '<div class="blank"><h3>No matches</h3>' +
+      '<p>Try clearing the search or filters.</p></div>';
+    return;
+  }
+  el.innerHTML = VIEW === 'board' ? boardHtml(rows) : tableHtml(rows);
+}
+
+function boardHtml(rows) {
+  return '<div class="board">' + BOARD_COLUMNS.map(col => {
+    const inCol = rows.filter(p => p.status === col);
+    return '<section class="col">' +
+      '<div class="col-head"><span class="dot ' + (STATUS_TONE[col] || 'grey') + '"></span>' +
+      '<h3>' + esc(col) + '</h3><span class="n">' + inCol.length + '</span></div>' +
+      (inCol.length ? inCol.map(card).join('') : '<div class="empty">—</div>') +
+      '</section>';
+  }).join('') + '</div>';
+}
+
+function card(p) {
+  const pct = p.pctComplete || 0;
+  const tone = pct >= 75 ? 'var(--green)' : pct >= 40 ? 'var(--blue)' : 'var(--amber)';
+  return '<article class="pcard" onclick="open_(\'' + p.id + '\')">' +
+    '<h4>' + esc(p.name) + '</h4>' +
+    '<div class="client">' + esc(p.client) + '</div>' +
+    '<div class="value">' + (p.value ? money(p.value) : '—') + '</div>' +
+    '<div class="bar"><i style="width:' + pct + '%;background:' + tone + '"></i></div>' +
+    '<div class="meta">' +
+      '<span class="chip">M' + p.module + '/6</span>' +
+      '<span class="chip">' + pct + '%</span>' +
+      (p.advance === 'Received' ? '<span class="chip green">ADV</span>' : '') +
+      (p.balance === 'Received' ? '<span class="chip green">BAL</span>' : '') +
+      (p.flagged ? '<span class="chip red">' + p.flagged + ' flagged</span>' : '') +
+      (p.pm ? '<span class="pm" title="' + esc(p.pm) + '">' + initialsOf(p.pm) + '</span>' : '') +
+    '</div></article>';
+}
+
+function tableHtml(rows) {
+  return '<div class="table-wrap"><table class="z"><thead><tr>' +
+    ['Project','Client','Sector','Type','Project Manager','Contract value',
+     'Module','Progress','Status','Advance','Balance','Retention ends']
+      .map((h, i) => '<th' + (i === 5 || i === 7 ? ' class="num"' : '') + '>' + h + '</th>').join('') +
+    '</tr></thead><tbody>' +
+    rows.map(p => '<tr class="clickable" onclick="open_(\'' + p.id + '\')">' +
+      '<td><b>' + esc(p.name) + '</b></td>' +
+      '<td>' + esc(p.client) + '</td>' +
+      '<td>' + esc(p.sector) + '</td>' +
+      '<td>' + esc(p.type) + '</td>' +
+      '<td>' + esc(p.pm) + '</td>' +
+      '<td class="num">' + (p.value ? naira(p.value) : '—') + '</td>' +
+      '<td>' + p.module + '/6</td>' +
+      '<td class="num">' + (p.pctComplete || 0) + '%</td>' +
+      '<td><span class="chip ' + (STATUS_TONE[p.status] || 'grey') + '">' + esc(p.status) + '</span></td>' +
+      '<td>' + esc(p.advance) + '</td>' +
+      '<td>' + esc(p.balance) + '</td>' +
+      '<td>' + fmtDate(p.retentionEnd) + '</td>' +
+    '</tr>').join('') + '</tbody></table></div>';
+}
+
+function setView(v) {
+  VIEW = v;
+  sync();
+  draw();
+  history.replaceState(null, '', v === 'table' ? '?view=table' : location.pathname);
+}
+
+function sync() {
+  document.getElementById('bBoard').classList.toggle('on', VIEW === 'board');
+  document.getElementById('bTable').classList.toggle('on', VIEW === 'table');
+}
+
+function open_(id) { location.href = 'project.html?id=' + encodeURIComponent(id); }
+</script>
+</body>
+</html>
