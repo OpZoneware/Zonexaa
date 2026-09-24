@@ -10,7 +10,7 @@ const CONFIG = {
 
   /* Apps Script Web App URL.
      Deploy > New deployment > Web app, then paste the URL here. */
-  API_URL: 'https://script.google.com/macros/s/AKfycbxemMbjnACimZTjDGUkY68ykOU2JOPBYm3Y1ox0h3DuiZLeyltGp4AyRsGpeDdvy0okhA/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbycMs9TBFdifqbvSPFH9zlO-wRfqCUzOCLisaZGlw9b8UGKkYnZ-BrqUWA07St5lLGLag/exec',
 
   /* Google Cloud OAuth Client ID (Web application).
      Console > APIs & Services > Credentials > Create OAuth client ID.
