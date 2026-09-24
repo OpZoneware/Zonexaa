@@ -21,6 +21,7 @@ const CONFIG = {
 
 /* ---------- board columns (order matters) ---------- */
 const BOARD_COLUMNS = [
+  'Needs verification',
   'Not Started',
   'Bidding',
   'Awarded — Pre-Mobilization',
@@ -33,6 +34,7 @@ const BOARD_COLUMNS = [
 ];
 
 const STATUS_TONE = {
+  'Needs verification':         'amber',
   'Not Started':                'grey',
   'Bidding':                    'blue',
   'Awarded — Pre-Mobilization': 'blue',
@@ -59,7 +61,7 @@ const CONTRACT_TYPES = [
   'New Construction', 'Renovation', 'Facility Management', 'Other'
 ];
 
-const PAYMENT_STATES = ['Not Due', 'Submitted', 'Received', 'N/A'];
+const PAYMENT_STATES = ['Not Due', 'Submitted', 'Received', 'N/A', 'Unverified'];
 
 /* ---------- cost model ----------------------------------------
    Confirmed with the Managing Director, 21 September 2026.
