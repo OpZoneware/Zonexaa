@@ -11,7 +11,7 @@ const CONFIG = {
   /* The Apps Script Web App URL. The only setting you must fill in.
      Deploy > New deployment > Web app, Execute as Me,
      Who has access: Anyone. Copy the /exec URL here. */
-  API_URL: '',
+  API_URL: 'https://script.google.com/macros/s/AKfycbz8ze2xd-ByHmoEO7Z2BXIvzJd4VFTtk_tYj9o-3MUdy3U9jgRMi1qDwOcWqH9nSeWq6g/exec',
 
   ORG:     'Zoneware Limited',
   SYSTEM:  'Zonexa',
