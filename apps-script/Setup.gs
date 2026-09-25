@@ -15,7 +15,7 @@ function setupZonexa() {
                  'module','status','advance','balance','completion','location',
                  'advancePct','balancePct','note','archived','archiveReason',
                  'archivedBy','archivedAt','createdBy','createdAt',
-                 'updatedBy','updatedAt'],
+                 'updatedBy','updatedAt','company'],
 
     'StageProgress': ['projectId','step','module','task','role','status',
                       'target','actual','evidence','notes','updatedBy','updatedAt'],
@@ -33,7 +33,7 @@ function setupZonexa() {
 
     'Sessions': ['token','email','issued','expires'],
 
-    'CompanyDocs': ['name','status','obtained','expiry','link','notes'],
+    'CompanyDocs': ['name','status','obtained','expiry','link','notes','company'],
 
     'DeductionRates': ['fee','rate','authority','atSource','ministry'],
 
@@ -169,3 +169,4 @@ function protectCredentialColumns(book) {
     }
   } catch (err) { /* cosmetic only */ }
 }
+

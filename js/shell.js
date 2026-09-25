@@ -105,7 +105,7 @@ const Shell = {
     document.body.insertAdjacentHTML('afterbegin',
       '<aside class="sidebar" id="sidebar">' +
         '<div class="sidebar-brand"><b>' + CONFIG.SYSTEM + '</b>' +
-        '<span>' + CONFIG.ORG + '</span></div>' +
+        '<span>Company portfolio</span></div>' +
         '<nav class="sidebar-nav"><div class="label">Projects</div>' +
         nav.map(n => '<a class="sidebar-link' + (n.id === active ? ' active' : '') +
           '" href="' + n.href + '">' + n.label + '</a>').join('') +
@@ -234,3 +234,4 @@ window.addEventListener('unhandledrejection', function (e) {
     Auth.expired();
   }
 });
+

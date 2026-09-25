@@ -241,6 +241,26 @@ const API = {
     return true;
   },
 
+  async companies() {
+    if (this.connected()) return this.call('listCompanies');
+    return [...new Set(Store.projects().map(p => p.company || 'Zoneware Limited'))].sort();
+  },
+
+  async companyDocuments(company) {
+    if (this.connected()) return this.call('listCompanyDocs', { company });
+    return Store.read('zonexa.companyDocs', []).filter(d => d.company === company);
+  },
+
+  async saveCompanyDocument(company, name, patch) {
+    if (this.connected()) return this.call('saveCompanyDoc', { company, name, patch });
+    const rows = Store.read('zonexa.companyDocs', []);
+    const index = rows.findIndex(d => d.company === company && d.name === name);
+    if (index < 0) rows.push(Object.assign({company, name}, patch));
+    else rows[index] = Object.assign({}, rows[index], patch);
+    Store.write('zonexa.companyDocs', rows);
+    return true;
+  },
+
   /* ---------- bill of quantities ---------- */
 
   async boq(projectId) {
@@ -466,3 +486,4 @@ const Cost = {
 
   totalRate() { return DEDUCTIONS.reduce((s, d) => s + d.rate, 0); }
 };
+

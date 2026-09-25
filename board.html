@@ -27,6 +27,7 @@
   <div class="kpi-row" id="kpis"></div>
 
   <div class="filters">
+    <select id="fCompany" aria-label="Company"><option value="">All companies</option></select>
     <input id="q" type="search" placeholder="Search project or client…" style="min-width:230px"/>
     <select id="fSector"><option value="">All sectors</option></select>
     <select id="fPM"><option value="">All project managers</option></select>
@@ -63,7 +64,7 @@ let VIEW = qs('view') === 'table' ? 'table' : 'board';
   drawKpis();
   draw();
 
-  ['q','fSector','fPM','fType'].forEach(id =>
+  ['q','fCompany','fSector','fPM','fType'].forEach(id =>
     document.getElementById(id).addEventListener('input', draw));
 
   document.getElementById('foot').textContent =
@@ -78,6 +79,7 @@ function fillFilters() {
         .map(v => '<option>' + esc(v) + '</option>').join(''));
   };
   add('fSector', ROWS.map(p => p.sector));
+  add('fCompany', ROWS.map(p => p.company || 'Zoneware Limited'));
   add('fPM',     ROWS.map(p => p.pm));
   add('fType',   ROWS.map(p => p.type));
 }
@@ -87,11 +89,13 @@ function filtered() {
   const fs = document.getElementById('fSector').value;
   const fp = document.getElementById('fPM').value;
   const ft = document.getElementById('fType').value;
+  const company = document.getElementById('fCompany').value;
   return ROWS.filter(p => {
+    if (company && (p.company || 'Zoneware Limited') !== company) return false;
     if (fs && p.sector !== fs) return false;
     if (fp && p.pm !== fp) return false;
     if (ft && p.type !== ft) return false;
-    if (q && !((p.name + ' ' + p.client).toLowerCase().includes(q))) return false;
+    if (q && !((p.name + ' ' + p.client + ' ' + (p.company || 'Zoneware Limited')).toLowerCase().includes(q))) return false;
     return true;
   });
 }
@@ -143,6 +147,7 @@ function card(p) {
   const pct = p.pctComplete || 0;
   const tone = pct >= 75 ? 'var(--green)' : pct >= 40 ? 'var(--blue)' : 'var(--amber)';
   return '<article class="pcard" onclick="open_(\'' + p.id + '\')">' +
+    '<div class="client">' + esc(p.company || 'Zoneware Limited') + '</div>' +
     '<h4>' + esc(p.name) + '</h4>' +
     '<div class="client">' + esc(p.client) + '</div>' +
     '<div class="value">' + (p.value ? money(p.value) : '—') + '</div>' +
@@ -159,12 +164,12 @@ function card(p) {
 
 function tableHtml(rows) {
   return '<div class="table-wrap"><table class="z"><thead><tr>' +
-    ['Project','Client','Sector','Type','Project Manager','Contract value',
+    ['Project / Company','Client','Sector','Type','Project Manager','Contract value',
      'Module','Progress','Status','Advance','Balance','Retention ends']
       .map((h, i) => '<th' + (i === 5 || i === 7 ? ' class="num"' : '') + '>' + h + '</th>').join('') +
     '</tr></thead><tbody>' +
     rows.map(p => '<tr class="clickable" onclick="open_(\'' + p.id + '\')">' +
-      '<td><b>' + esc(p.name) + '</b></td>' +
+      '<td><b>' + esc(p.name) + '</b><br>' + esc(p.company || 'Zoneware Limited') + '</td>' +
       '<td>' + esc(p.client) + '</td>' +
       '<td>' + esc(p.sector) + '</td>' +
       '<td>' + esc(p.type) + '</td>' +
@@ -195,3 +200,4 @@ function open_(id) { location.href = 'project.html?id=' + encodeURIComponent(id)
 </script>
 </body>
 </html>
+
