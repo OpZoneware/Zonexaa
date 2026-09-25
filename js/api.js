@@ -51,7 +51,10 @@ const API = {
           'The server took too long to answer. This is usually the first ' +
           'request after a quiet spell — try once more. If it keeps ' +
           'happening, check that the deployment access is set to Anyone.'));
-      }, timeoutMs || 60000);
+      // Never leave a page in a loading state for a full minute. The
+      // warm-up request handles normal cold starts; a real request gets
+      // a bounded retry window and a useful error instead.
+      }, timeoutMs || 20000);
 
       window[name] = (res) => {
         if (settled) return;
@@ -92,7 +95,7 @@ const API = {
 
   /* No token yet at this point, so it goes direct. */
   async login(code) {
-    const out = await this.jsonp('login', { code }, '');
+    const out = await this.jsonp('login', { code }, '', 20000);
     if (!out) throw new Error('Empty response from the Zonexa server.');
     if (out.error) throw new Error(out.error);
     return out.data;                      // { token, user }
