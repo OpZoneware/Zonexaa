@@ -107,6 +107,9 @@ const Projects = {
         '<input id="fClient" type="text" value="' + esc(p.client || '') +
         '" placeholder="SCRPS"/></div>' +
 
+      '<div class="field"><label for="fCompany">Company</label>' +
+        '<input id="fCompany" type="text" value="' + esc(p.company || 'Zoneware Limited') + '"/></div>' +
+
       '<div class="field"><label for="fSector">Sector</label>' +
         '<select id="fSector">' + options(SECTORS, p.sector) + '</select></div>' +
 
@@ -175,6 +178,7 @@ const Projects = {
       id:         Modal.value('fId'),
       name:       Modal.value('fName'),
       client:     Modal.value('fClient'),
+      company:    Modal.value('fCompany').trim() || 'Zoneware Limited',
       sector:     Modal.value('fSector'),
       type:       Modal.value('fType'),
       location:   Modal.value('fLocation'),
@@ -193,3 +197,4 @@ const Projects = {
     };
   }
 };
+

@@ -117,7 +117,7 @@ function audit(action, target, detail) {
 /* Actions that change data. After any of these succeed, the flat
    Summary tab is rebuilt so the spreadsheet view is never stale. */
 var WRITE_ACTIONS = ['saveProject', 'deleteProject', 'saveStage', 'saveDocument',
-                     'saveBoqLine', 'deleteBoqLine', 'saveRouting'];
+                     'saveBoqLine', 'deleteBoqLine', 'saveRouting', 'saveCompanyDoc'];
 
 function apiCall(action, p) {
   var result = apiDispatch(action, p);
@@ -217,6 +217,30 @@ function apiDispatch(action, p) {
 
     case 'listUsers':
       return readAll('Users');
+
+    case 'listCompanies':
+      var names = {};
+      readAll('Projects').concat(readAll('CompanyDocs')).forEach(function (r) {
+        names[r.company || 'Zoneware Limited'] = true;
+      });
+      return Object.keys(names).sort();
+
+    case 'listCompanyDocs':
+      if (!p.company) throw new Error('Choose a company.');
+      return readAll('CompanyDocs').filter(function (r) {
+        return (r.company || 'Zoneware Limited') === p.company;
+      });
+
+    case 'saveCompanyDoc':
+      requireManage();
+      if (!p.company || !p.name) throw new Error('Company and document name are required.');
+      var companyPatch = {};
+      ['status', 'obtained', 'expiry', 'link', 'notes'].forEach(function (k) {
+        if (p.patch && p.patch[k] !== undefined) companyPatch[k] = p.patch[k];
+      });
+      upsert('CompanyDocs', ['company', 'name'], [p.company, p.name], companyPatch);
+      audit('saveCompanyDoc', p.company + ':' + p.name, companyPatch);
+      return true;
 
     default:
       throw new Error('Unknown action: ' + action);
@@ -331,3 +355,4 @@ function requireArea(area, projectId) {
 
   throw new Error('You do not have permission to change this section.');
 }
+
