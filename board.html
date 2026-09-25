@@ -159,6 +159,8 @@ function card(p) {
       (p.balance === 'Received' ? '<span class="chip green">BAL</span>' : '') +
       (p.flagged ? '<span class="chip red">' + p.flagged + ' flagged</span>' : '') +
       (p.pm ? '<span class="pm" title="' + esc(p.pm) + '">' + initialsOf(p.pm) + '</span>' : '') +
+      (safeDocumentUrl(p.folderLink) ? '<a class="linkpill" target="_blank" rel="noopener noreferrer" href="' +
+        esc(safeDocumentUrl(p.folderLink)) + '" onclick="event.stopPropagation()">Open Drive folder</a>' : '') +
     '</div></article>';
 }
 
@@ -197,6 +199,12 @@ function sync() {
 }
 
 function open_(id) { location.href = 'project.html?id=' + encodeURIComponent(id); }
+function safeDocumentUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : '';
+  } catch (e) { return ''; }
+}
 </script>
 </body>
 </html>
