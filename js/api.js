@@ -24,6 +24,7 @@ const API = {
      comes close, but callBig() is there if that ever changes.
      ------------------------------------------------------------ */
   _seq: 0,
+  _projectsRefreshing: false,
 
   jsonp(action, payload, token, timeoutMs) {
     return new Promise((resolve, reject) => {
@@ -139,10 +140,43 @@ const API = {
   },
 
   async allProjects() {
-    let rows;
-    if (this.connected()) rows = await this.call('listProjects');
-    else rows = Store.projects();
+    if (this.connected()) {
+      const cached = this.readProjectCache();
+      if (cached) {
+        this.refreshProjectsInBackground();
+        return cached.map(this.decorate);
+      }
+    }
+    const rows = this.connected() ? await this.call('listProjects') : Store.projects();
+    if (this.connected()) this.writeProjectCache(rows);
     return rows.map(this.decorate);
+  },
+
+  readProjectCache() {
+    try {
+      const raw = localStorage.getItem('zonexa.projectCache');
+      if (!raw) return null;
+      const item = JSON.parse(raw);
+      if (!item || !Array.isArray(item.rows)) return null;
+      return item.rows;
+    } catch (e) { return null; }
+  },
+
+  writeProjectCache(rows) {
+    try {
+      localStorage.setItem('zonexa.projectCache', JSON.stringify({
+        savedAt: Date.now(), rows
+      }));
+    } catch (e) {}
+  },
+
+  refreshProjectsInBackground() {
+    if (this._projectsRefreshing) return;
+    this._projectsRefreshing = true;
+    this.call('listProjects')
+      .then(rows => this.writeProjectCache(rows))
+      .catch(() => {})
+      .finally(() => { this._projectsRefreshing = false; });
   },
 
   async project(id) {
