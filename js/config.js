@@ -30,6 +30,7 @@ const BOARD_COLUMNS = [
   'Active — Delayed',
   'Snagging / Close-out',
   'Retention Period',
+  'Completed',
   'Closed'
 ];
 
@@ -43,6 +44,7 @@ const STATUS_TONE = {
   'Active — Delayed':           'red',
   'Snagging / Close-out':       'amber',
   'Retention Period':           'blue',
+  'Completed':                  'green',
   'Closed':                     'grey'
 };
 
@@ -162,4 +164,3 @@ function stepOwnerRoles(token) {
   });
   return out;
 }
-

@@ -24,7 +24,8 @@ const API = {
      comes close, but callBig() is there if that ever changes.
      ------------------------------------------------------------ */
   _seq: 0,
-  _projectsRefreshing: false,
+  _projectsRequest: null,
+  _projectsGeneration: 0,
 
   jsonp(action, payload, token, timeoutMs) {
     return new Promise((resolve, reject) => {
@@ -89,6 +90,7 @@ const API = {
       throw err;
     }
     if (out.error) throw new Error(out.error);
+    if (action === 'saveProject' || action === 'deleteProject') this.clearProjectCache();
     return out.data;
   },
 
@@ -143,40 +145,57 @@ const API = {
     if (this.connected()) {
       const cached = this.readProjectCache();
       if (cached) {
-        this.refreshProjectsInBackground();
         return cached.map(this.decorate);
       }
     }
-    const rows = this.connected() ? await this.call('listProjects') : Store.projects();
-    if (this.connected()) this.writeProjectCache(rows);
+    const rows = this.connected() ? await this.loadProjects() : Store.projects();
     return rows.map(this.decorate);
   },
 
   readProjectCache() {
     try {
-      const raw = localStorage.getItem('zonexa.projectCache');
+      localStorage.removeItem('zonexa.projectCache'); // remove the old unscoped cache
+      const raw = sessionStorage.getItem('zonexa.projectCache.v2');
       if (!raw) return null;
       const item = JSON.parse(raw);
-      if (!item || !Array.isArray(item.rows)) return null;
+      if (!item || !Array.isArray(item.rows) || !Store.token() ||
+          item.session !== Store.token() || item.endpoint !== CONFIG.API_URL ||
+          Date.now() - item.savedAt >= 60000 || Date.now() < item.savedAt) return null;
       return item.rows;
     } catch (e) { return null; }
   },
 
   writeProjectCache(rows) {
     try {
-      localStorage.setItem('zonexa.projectCache', JSON.stringify({
-        savedAt: Date.now(), rows
+      sessionStorage.setItem('zonexa.projectCache.v2', JSON.stringify({
+        savedAt: Date.now(), session: Store.token(), endpoint: CONFIG.API_URL, rows
       }));
     } catch (e) {}
   },
 
-  refreshProjectsInBackground() {
-    if (this._projectsRefreshing) return;
-    this._projectsRefreshing = true;
-    this.call('listProjects')
-      .then(rows => this.writeProjectCache(rows))
-      .catch(() => {})
-      .finally(() => { this._projectsRefreshing = false; });
+  clearProjectCache() {
+    this._projectsGeneration++;
+    this._projectsRequest = null;
+    try { sessionStorage.removeItem('zonexa.projectCache.v2'); } catch (e) {}
+    try { localStorage.removeItem('zonexa.projectCache'); } catch (e) {}
+  },
+
+  loadProjects() {
+    if (this._projectsRequest) return this._projectsRequest;
+    const token = Store.token();
+    const generation = this._projectsGeneration;
+    const request = this.call('listProjects').then(rows => {
+      if (Store.token() !== token || generation !== this._projectsGeneration) {
+        throw new Error('Session or project data changed. Please reload.');
+      }
+      if (!Array.isArray(rows)) throw new Error('Invalid project response. Please retry.');
+      this.writeProjectCache(rows);
+      return rows;
+    }).finally(() => {
+      if (this._projectsRequest === request) this._projectsRequest = null;
+    });
+    this._projectsRequest = request;
+    return request;
   },
 
   async project(id) {
@@ -374,8 +393,11 @@ const Store = {
 
   /* ---- session ---- */
   session() { return this.read(this.K.session, null); },
-  setSession(s) { this.write(this.K.session, s); },
-  clearSession() { try { localStorage.removeItem(this.K.session); } catch (e) {} },
+  setSession(s) { API.clearProjectCache(); this.write(this.K.session, s); },
+  clearSession() {
+    API.clearProjectCache();
+    try { localStorage.removeItem(this.K.session); } catch (e) {}
+  },
   /* The session token issued by Apps Script at sign-in. It lasts 12
      hours and is the only credential the back end accepts. */
   token() { const s = this.session(); return (s && s.token) || ''; },
@@ -523,4 +545,3 @@ const Cost = {
 
   totalRate() { return DEDUCTIONS.reduce((s, d) => s + d.rate, 0); }
 };
-

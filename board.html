@@ -56,7 +56,15 @@ let VIEW = qs('view') === 'table' ? 'table' : 'board';
   sync();
   if (Session.canManage()) document.getElementById('btnNew').style.display = '';
 
-  ROWS = await API.projects();
+  try {
+    ROWS = await API.projects();
+  } catch (err) {
+    if (err.authFailed) { Auth.expired(); return; }
+    document.getElementById('sub').textContent = 'Projects could not be loaded';
+    document.getElementById('content').innerHTML = '<div class="blank"><p>' +
+      esc(err.message) + '</p><button class="btn" onclick="location.reload()">Retry</button></div>';
+    return;
+  }
   document.getElementById('sub').textContent =
     ROWS.length + ' project' + (ROWS.length === 1 ? '' : 's') + ' · ' + s.role;
 
@@ -208,4 +216,3 @@ function safeDocumentUrl(value) {
 </script>
 </body>
 </html>
-

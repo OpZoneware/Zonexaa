@@ -54,7 +54,15 @@ let CAN = { stage: false, documents: false, payments: false, routing: false };
   if (!s) return;
   Shell.render('board');
 
-  P = await API.project(qs('id'));
+  try {
+    P = await API.project(qs('id'));
+  } catch (err) {
+    if (err.authFailed) { Auth.expired(); return; }
+    document.getElementById('pName').textContent = 'Project could not be loaded';
+    document.getElementById('pSub').textContent = err.message;
+    document.getElementById('pActions').innerHTML = '<button class="btn" onclick="location.reload()">Retry</button>';
+    return;
+  }
   if (!P) {
     document.getElementById('pName').textContent = 'Project not found';
     return;
@@ -91,6 +99,11 @@ function header() {
   document.getElementById('pStatus').innerHTML =
     '<span class="chip ' + (STATUS_TONE[P.status] || 'grey') + '" ' +
     'style="font-size:11.5px;padding:6px 12px">' + esc(P.status) + '</span>';
+  if (safeDocumentUrl(P.folderLink)) {
+    document.getElementById('pActions').insertAdjacentHTML('beforeend',
+      '<a class="btn ghost sm" target="_blank" rel="noopener noreferrer" href="' +
+      esc(safeDocumentUrl(P.folderLink)) + '">Open Drive folder</a>');
+  }
 
   const m = [
     ['Company', P.company || 'Zoneware Limited'],
@@ -410,4 +423,3 @@ function setRoute(tranche, stepNo, field, value) {
 </script>
 </body>
 </html>
-
