@@ -263,7 +263,13 @@ const API = {
   /* ---------- stage checklist ---------- */
 
   async stageProgress(projectId) {
-    if (this.connected()) return this.call('listStageProgress', { projectId });
+    if (this.connected()) {
+      const saved = await this.call('listStageProgress', { projectId });
+      const byStep = new Map(saved.map(row => [String(row.step), row]));
+      return STAGE_STEPS.map(step => Object.assign({status: 'Not Started',
+        target: '', actual: '', evidence: '', notes: ''}, step,
+        byStep.get(String(step.step)) || {}));
+    }
     return Store.stageProgress(projectId);
   },
 
