@@ -9,7 +9,10 @@ test('shared evidence populates template steps without losing unmatched steps',a
  ctx.api.call=async()=>[{step:'3.1',evidence:'https://drive.google.com/file/d/example/view',status:'Completed'}];
  const rows=await ctx.api.stageProgress('P1');
  assert.equal(rows[0].task,'Award');assert.equal(rows[0].evidence,'https://drive.google.com/file/d/example/view');
- assert.equal(rows[1].evidence,'');assert.equal(rows[1].status,'Not Started');
+ assert.equal(rows[1].evidence,'');assert.equal(rows[1].status,'Not recorded');
+ ctx.api.call=async()=>[{step:'3.1',module:'',task:'',role:'',status:'',evidence:'https://example.test'}];
+ const sparse=await ctx.api.stageProgress('P1');
+ assert.equal(sparse[0].task,'Award');assert.equal(sparse[0].module,3);assert.equal(sparse[0].status,'Not recorded');
  ctx.api.call=async()=>{throw new Error('Offline');};
  await assert.rejects(ctx.api.stageProgress('P1'),/Offline/);
 });

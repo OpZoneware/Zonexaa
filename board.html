@@ -159,10 +159,9 @@ function card(p) {
     '<h4>' + esc(p.name) + '</h4>' +
     '<div class="client">' + esc(p.client) + '</div>' +
     '<div class="value">' + (p.value ? money(p.value) : '—') + '</div>' +
-    '<div class="bar"><i style="width:' + pct + '%;background:' + tone + '"></i></div>' +
     '<div class="meta">' +
       '<span class="chip">M' + p.module + '/6</span>' +
-      '<span class="chip">' + pct + '%</span>' +
+      '<span class="chip">' + esc(p.status) + '</span>' +
       (p.advance === 'Received' ? '<span class="chip green">ADV</span>' : '') +
       (p.balance === 'Received' ? '<span class="chip green">BAL</span>' : '') +
       (p.flagged ? '<span class="chip red">' + p.flagged + ' flagged</span>' : '') +
@@ -175,7 +174,7 @@ function card(p) {
 function tableHtml(rows) {
   return '<div class="table-wrap"><table class="z"><thead><tr>' +
     ['Project / Company','Client','Sector','Type','Project Manager','Contract value',
-     'Module','Progress','Status','Advance','Balance','Retention ends']
+     'Module','Physical progress','Status','Advance','Balance','Retention ends']
       .map((h, i) => '<th' + (i === 5 || i === 7 ? ' class="num"' : '') + '>' + h + '</th>').join('') +
     '</tr></thead><tbody>' +
     rows.map(p => '<tr class="clickable" onclick="open_(\'' + p.id + '\')">' +
@@ -186,7 +185,7 @@ function tableHtml(rows) {
       '<td>' + esc(p.pm) + '</td>' +
       '<td class="num">' + (p.value ? naira(p.value) : '—') + '</td>' +
       '<td>' + p.module + '/6</td>' +
-      '<td class="num">' + (p.pctComplete || 0) + '%</td>' +
+      '<td>Not recorded</td>' +
       '<td><span class="chip ' + (STATUS_TONE[p.status] || 'grey') + '">' + esc(p.status) + '</span></td>' +
       '<td>' + esc(p.advance) + '</td>' +
       '<td>' + esc(p.balance) + '</td>' +
