@@ -109,11 +109,11 @@ function header() {
     ['Company', P.company || 'Zoneware Limited'],
     ['Contract value', P.value ? naira(P.value) : '—'],
     ['Contract type', P.type],
-    ['Project manager', P.pm],
+    ['Project manager', P.pm || 'Not recorded'],
     ['Site engineer', P.engineer || '—'],
     ['Award date', fmtDate(P.awardDate)],
     ['Module', P.module + ' of 6'],
-    ['SOP progress', (P.pctComplete || 0) + '% · ' + P.stepsDone + '/' + P.stepsTotal],
+    ['Physical progress', 'Not recorded as a percentage'],
     ['Retention ends', fmtDate(P.retentionEnd)]
   ];
   document.getElementById('pMeta').innerHTML = m.map(x =>
@@ -163,14 +163,13 @@ async function drawStage() {
   let html =
     '<div class="stagebar">' +
       '<span class="mycount">' +
-        (openMine ? openMine + ' step' + (openMine === 1 ? '' : 's') + ' waiting on you'
-                  : 'Nothing on this project is waiting on you') +
+        'Checklist records — separate from physical project completion' +
       '</span>' +
       '<button type="button" class="ghost' + (MINE_ONLY ? ' on' : '') +
         '" onclick="toggleMine()">' +
         (MINE_ONLY ? 'Showing my steps' : 'Show only my steps') +
       '</button>' +
-    '</div>';
+    '</div><p class="note">Older projects may have incomplete records. “Not recorded” means the status has not been entered; it does not mean the work was not done. Use notes to identify team-confirmed information and evidence links for documents.</p>';
 
   if (!rows.length) {
     document.getElementById('panelStage').innerHTML = html +
@@ -204,7 +203,9 @@ async function drawStage() {
             'onchange="setStep(\'' + r.step + '\',\'actual\',this.value)"/>' +
           '<div><input type="url" placeholder="Evidence link" aria-label="Evidence for step ' + esc(r.step) + '" value="' + esc(r.evidence) + '" ' + lk +
             'onchange="setStep(\'' + r.step + '\',\'evidence\',this.value)"/>' +
-          (safeDocumentUrl(r.evidence) ? '<a class="linkpill" target="_blank" rel="noopener noreferrer" href="' + esc(safeDocumentUrl(r.evidence)) + '">Open evidence</a>' : '') + '</div>' +
+          (safeDocumentUrl(r.evidence) ? '<a class="linkpill" target="_blank" rel="noopener noreferrer" href="' + esc(safeDocumentUrl(r.evidence)) + '">Open evidence</a>' : '') +
+          '<input type="text" aria-label="Notes for step ' + esc(r.step) + '" placeholder="Source / team-confirmed notes" value="' + esc(r.notes) + '" ' + lk +
+          'onchange="setStep(\'' + r.step + '\',\'notes\',this.value)"/></div>' +
         '</div>';
       }).join('') +
       '</div></section>';
@@ -240,7 +241,7 @@ async function drawDocs() {
   let html = '<div class="panel"><div class="panel-head">' +
     '<div><h2>Document Checklist</h2>' +
     '<p>' + rows.length + ' checklist items and linked records. ' +
-    'Records are held as links, not uploads.</p></div></div>' +
+    'Records are held as links, not uploads. Missing links mean documentation has not been recorded, not that work was not done.</p></div></div>' +
     '<div class="panel-body tight">';
 
   sections.forEach(sec => {

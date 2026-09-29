@@ -266,9 +266,17 @@ const API = {
     if (this.connected()) {
       const saved = await this.call('listStageProgress', { projectId });
       const byStep = new Map(saved.map(row => [String(row.step), row]));
-      return STAGE_STEPS.map(step => Object.assign({status: 'Not Started',
-        target: '', actual: '', evidence: '', notes: ''}, step,
-        byStep.get(String(step.step)) || {}));
+      return STAGE_STEPS.map(step => {
+        const row = byStep.get(String(step.step)) || {};
+        // Sheet rows can be sparse: never let empty saved metadata erase
+        // the task, owner or module from the authoritative checklist.
+        const result = Object.assign({}, step);
+        ['target','actual','evidence','notes','updatedBy','updatedAt'].forEach(k => {
+          result[k] = row[k] || '';
+        });
+        result.status = row.status || 'Not recorded';
+        return result;
+      });
     }
     return Store.stageProgress(projectId);
   },
@@ -287,7 +295,7 @@ const API = {
     const requirements = DOC_REQUIREMENTS.filter(d => d.scope === 'project')
       .filter(d => d.section !== 'E' || projectType === 'Facility Management');
     const byName = new Map(saved.map(d => [d.name, d]));
-    const rows = requirements.map(d => Object.assign({ status: 'Not Started', link: '',
+    const rows = requirements.map(d => Object.assign({ status: 'Not recorded', link: '',
       obtained: '', notes: '' }, d, byName.get(d.name) || {}));
     const known = new Set(requirements.map(d => d.name));
     saved.filter(d => !known.has(d.name)).forEach(d => rows.push(Object.assign({

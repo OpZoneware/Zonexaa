@@ -49,6 +49,7 @@ const STATUS_TONE = {
 };
 
 const STEP_STATUSES = [
+  'Not recorded',
   'Not Started', 'In Progress', 'Submitted', 'Under Review',
   'Completed', 'Delayed', 'Blocked', 'N/A'
 ];
