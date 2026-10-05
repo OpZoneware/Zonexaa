@@ -23,7 +23,14 @@
   </div>
 
   <div class="meta-grid" id="pMeta" style="margin-bottom:22px"></div>
-  <div class="note" id="projectNote" hidden></div>
+  <section id="contractDetails" hidden style="margin-bottom:18px">
+    <h2 style="font-size:16px;margin-bottom:12px">Contract details</h2>
+    <div class="meta-grid" id="contractFacts"></div>
+  </section>
+  <details id="projectHistory" hidden style="margin-bottom:22px;border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:14px 18px">
+    <summary style="cursor:pointer;font-weight:600">Record history</summary>
+    <p id="projectNote" style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:12px 0 0"></p>
+  </details>
 
   <div class="tabs">
     <button class="on" type="button" onclick="tab('stage')"  id="tStage">Stage Checklist</button>
@@ -83,8 +90,22 @@ let CAN = { stage: false, documents: false, payments: false, routing: false };
 
 function header() {
   const projectNote = document.getElementById('projectNote');
-  projectNote.hidden = !P.note;
+  document.getElementById('projectHistory').hidden = !P.note;
   projectNote.textContent = P.note || '';
+  const sourceNote = String(P.note || '');
+  const facts = [
+    ['Reference', /Contract reference:\s*([^\.\n]+)/i],
+    ['Duration', /Award duration:\s*([^\.\n]+)/i],
+    ['Advance provision', /Advance provision:\s*([\d.]+%)/i],
+    ['Agreement fee', /Agreement fee(?: stated as)?\s*([\d.]+%)/i],
+    ['Performance guarantee', /\bPG\s*([\d.]+%)/i],
+    ['Retention', /\bretention\s*([\d.]+%)/i]
+  ].map(([label, pattern]) => {
+    const match = sourceNote.match(pattern);
+    return match ? '<div><span>' + esc(label) + '</span><b>' + esc(match[1]) + '</b></div>' : '';
+  }).filter(Boolean);
+  document.getElementById('contractDetails').hidden = !facts.length;
+  document.getElementById('contractFacts').innerHTML = facts.join('');
   document.getElementById('pName').textContent = P.name;
   document.getElementById('pSub').textContent =
     P.id + ' · ' + P.client + ' · ' + P.location;
@@ -163,13 +184,13 @@ async function drawStage() {
   let html =
     '<div class="stagebar">' +
       '<span class="mycount">' +
-        'Checklist records — separate from physical project completion' +
+        'Project Checklist' +
       '</span>' +
       '<button type="button" class="ghost' + (MINE_ONLY ? ' on' : '') +
         '" onclick="toggleMine()">' +
         (MINE_ONLY ? 'Showing my steps' : 'Show only my steps') +
       '</button>' +
-    '</div><p class="note">Older projects may have incomplete records. “Not recorded” means the status has not been entered; it does not mean the work was not done. Use notes to identify team-confirmed information and evidence links for documents.</p>';
+    '</div>';
 
   if (!rows.length) {
     document.getElementById('panelStage').innerHTML = html +
@@ -299,7 +320,7 @@ function drawPay() {
   const adv = Cost.tranche(P.value, P.advancePct);
   const bal = Cost.tranche(P.value, P.balancePct);
 
-  let html = '<div class="grid2">' +
+  let html = '<p class="note">Payment estimates use the configured deduction rates. Confirm the applicable contract rates and payment certificates before using these figures.</p><div class="grid2">' +
     trancheCard('Advance payment', P.advancePct, adv) +
     trancheCard('Balance payment', P.balancePct, bal) +
     '</div>';
