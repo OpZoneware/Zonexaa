@@ -26,6 +26,49 @@ const API = {
   _seq: 0,
   _projectsRequest: null,
   _projectsGeneration: 0,
+  _readRequests: new Map(),
+  _readGeneration: 0,
+
+  // Cache only read actions, for one minute, within this signed-in tab.
+  // Never retry writes automatically: a timeout can follow a successful save.
+  read(action, payload) {
+    const scope = JSON.stringify([Store.token(), CONFIG.API_URL]);
+    const key = JSON.stringify([action, payload || {}]);
+    const generation = this._readGeneration;
+    const requestKey = scope + key;
+    try {
+      const cache = JSON.parse(sessionStorage.getItem('zonexa.readCache.v1') || '{}');
+      const item = cache.scope === scope && cache.items && cache.items[key];
+      if (Store.token() && item && Date.now() >= item.at && Date.now() - item.at < 60000)
+        return Promise.resolve(item.data);
+    } catch (e) {}
+    if (this._readRequests.has(requestKey)) return this._readRequests.get(requestKey);
+    const request = this.call(action, payload).then(data => {
+      if (scope !== JSON.stringify([Store.token(), CONFIG.API_URL]) || generation !== this._readGeneration)
+        throw new Error('Session or records changed. Please retry.');
+      try {
+        let cache = JSON.parse(sessionStorage.getItem('zonexa.readCache.v1') || '{}');
+        if (cache.scope !== scope) cache = {scope, items: {}};
+        cache.items = cache.items || {};
+        Object.keys(cache.items).forEach(k => {
+          if (Date.now() - cache.items[k].at >= 60000) delete cache.items[k];
+        });
+        cache.items[key] = {at: Date.now(), data};
+        sessionStorage.setItem('zonexa.readCache.v1', JSON.stringify(cache));
+      } catch (e) {}
+      return data;
+    }).finally(() => {
+      if (this._readRequests.get(requestKey) === request) this._readRequests.delete(requestKey);
+    });
+    this._readRequests.set(requestKey, request);
+    return request;
+  },
+
+  clearReadCache() {
+    this._readGeneration++;
+    this._readRequests.clear();
+    try { sessionStorage.removeItem('zonexa.readCache.v1'); } catch (e) {}
+  },
 
   jsonp(action, payload, token, timeoutMs) {
     return new Promise((resolve, reject) => {
@@ -40,19 +83,24 @@ const API = {
       const tag = document.createElement('script');
       let settled = false;
 
-      const cleanup = () => {
-        try { delete window[name]; } catch (e) { window[name] = undefined; }
+      const cleanup = (late = false) => {
+        // A removed script may still arrive. Absorb its late callback safely.
+        if (late) {
+          window[name] = () => {};
+          setTimeout(() => { delete window[name]; }, 300000);
+        } else {
+          try { delete window[name]; } catch (e) { window[name] = undefined; }
+        }
         if (tag.parentNode) tag.parentNode.removeChild(tag);
         clearTimeout(timer);
       };
 
       const timer = setTimeout(() => {
         if (settled) return;
-        settled = true; cleanup();
+        settled = true; cleanup(true);
         reject(new Error(
-          'The server took too long to answer. This is usually the first ' +
-          'request after a quiet spell — try once more. If it keeps ' +
-          'happening, check that the deployment access is set to Anyone.'));
+          'The server took too long to answer. Please retry. If you were saving, ' +
+          'check the record before submitting again.'));
       // Never leave a page in a loading state for a full minute. The
       // warm-up request handles normal cold starts; a real request gets
       // a bounded retry window and a useful error instead.
@@ -66,9 +114,8 @@ const API = {
 
       tag.onerror = () => {
         if (settled) return;
-        settled = true; cleanup();
-        reject(new Error('Cannot reach the Zonexa server. Either the URL is wrong, ' +
-                         'or the deployment access is not set to Anyone.'));
+        settled = true; cleanup(true);
+        reject(new Error('Cannot reach the Zonexa server. Check your connection and retry.'));
       };
 
       tag.src = url;
@@ -90,6 +137,7 @@ const API = {
       throw err;
     }
     if (out.error) throw new Error(out.error);
+    if (/^(save|delete)/.test(action)) this.clearReadCache();
     if (action === 'saveProject' || action === 'deleteProject') this.clearProjectCache();
     return out.data;
   },
@@ -174,6 +222,7 @@ const API = {
   },
 
   clearProjectCache() {
+    this.clearReadCache();
     this._projectsGeneration++;
     this._projectsRequest = null;
     try { sessionStorage.removeItem('zonexa.projectCache.v2'); } catch (e) {}
@@ -264,7 +313,7 @@ const API = {
 
   async stageProgress(projectId) {
     if (this.connected()) {
-      const saved = await this.call('listStageProgress', { projectId });
+      const saved = await this.read('listStageProgress', { projectId });
       const byStep = new Map(saved.map(row => [String(row.step), row]));
       return STAGE_STEPS.map(step => {
         const row = byStep.get(String(step.step)) || {};
@@ -291,7 +340,7 @@ const API = {
 
   async documents(projectId, projectType) {
     if (!this.connected()) return Store.documents(projectId);
-    const saved = await this.call('listDocuments', { projectId });
+    const saved = await this.read('listDocuments', { projectId });
     const requirements = DOC_REQUIREMENTS.filter(d => d.scope === 'project')
       .filter(d => d.section !== 'E' || projectType === 'Facility Management');
     const byName = new Map(saved.map(d => [d.name, d]));

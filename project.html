@@ -39,7 +39,7 @@
     <button type="button" onclick="tab('route')"   id="tRoute">Payment Routing</button>
   </div>
 
-  <div id="panelStage"></div>
+  <div id="panelStage"><div class="loading-skeleton" role="status"><span>Loading project…</span><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></div></div>
   <div id="panelDocs"  style="display:none"></div>
   <div id="panelPay"   style="display:none"></div>
   <div id="panelRoute" style="display:none"></div>
@@ -65,12 +65,14 @@ let CAN = { stage: false, documents: false, payments: false, routing: false };
     P = await API.project(qs('id'));
   } catch (err) {
     if (err.authFailed) { Auth.expired(); return; }
+    document.getElementById('panelStage').innerHTML = '';
     document.getElementById('pName').textContent = 'Project could not be loaded';
     document.getElementById('pSub').textContent = err.message;
     document.getElementById('pActions').innerHTML = '<button class="btn" onclick="location.reload()">Retry</button>';
     return;
   }
   if (!P) {
+    document.getElementById('panelStage').innerHTML = '';
     document.getElementById('pName').textContent = 'Project not found';
     return;
   }
@@ -87,6 +89,11 @@ let CAN = { stage: false, documents: false, payments: false, routing: false };
   drawPay();
   drawRoute();
 })();
+
+function loadingPanel(label) {
+  return '<div class="loading-skeleton" role="status"><span>' + esc(label) +
+    '</span><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></div>';
+}
 
 function header() {
   const projectNote = document.getElementById('projectNote');
@@ -152,6 +159,7 @@ function header() {
 }
 
 function tab(which) {
+  if (!P) return;
   ['stage','docs','pay','route'].forEach(t => {
     document.getElementById('panel' + t[0].toUpperCase() + t.slice(1)).style.display =
       t === which ? '' : 'none';
@@ -167,7 +175,7 @@ function toggleMine() { MINE_ONLY = !MINE_ONLY; drawStage(); }
 
 async function drawStage() {
   if (!STAGE_ROWS) {
-    document.getElementById('panelStage').innerHTML = '<p class="empty">Loading checklist…</p>';
+    document.getElementById('panelStage').innerHTML = loadingPanel('Loading checklist…');
     try { STAGE_ROWS = await API.stageProgress(P.id); }
     catch (err) {
       if (err.authFailed) { Auth.expired(); return; }
@@ -249,7 +257,7 @@ async function setStep(step, field, value) {
 /* ---------- documents ---------- */
 async function drawDocs() {
   const panel = document.getElementById('panelDocs');
-  panel.innerHTML = '<p class="empty">Loading documents…</p>';
+  panel.innerHTML = loadingPanel('Loading documents…');
   let rows;
   try {
     rows = await API.documents(P.id, P.type);
