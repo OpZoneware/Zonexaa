@@ -52,3 +52,39 @@ test('failed project reads remain visible and can retry',async()=>{
   c.api.call=async()=>[{id:'P1'}];
   assert.equal((await c.api.allProjects())[0].id,'P1');
 });
+
+test('detail reads coalesce and cache by project and action',async()=>{
+  const c=setup();let calls=0;
+  c.api.call=async()=>{calls++;return [{evidence:'https://example.test/file'}];};
+  await Promise.all([c.api.read('listDocuments',{projectId:'A'}),c.api.read('listDocuments',{projectId:'A'})]);
+  await c.api.read('listDocuments',{projectId:'A'});
+  assert.equal(calls,1);
+  await c.api.read('listDocuments',{projectId:'B'});
+  await c.api.read('listStageProgress',{projectId:'A'});
+  assert.equal(calls,3);
+});
+
+test('detail cache expires and never crosses endpoint or session',async()=>{
+  const c=setup();let calls=0;c.api.call=async()=>++calls;
+  await c.api.read('listDocuments',{});
+  const cache=JSON.parse(c.sessionStorage.getItem('zonexa.readCache.v1'));
+  Object.values(cache.items).forEach(i=>i.at=Date.now()-61000);
+  c.sessionStorage.setItem('zonexa.readCache.v1',JSON.stringify(cache));
+  await c.api.read('listDocuments',{});assert.equal(calls,2);
+  c.CONFIG.API_URL='https://different.test';
+  await c.api.read('listDocuments',{});assert.equal(calls,3);
+  c.store.setSession({token:'new-session'});
+  await c.api.read('listDocuments',{});assert.equal(calls,4);
+});
+
+test('successful saves invalidate detail cache and late reads cannot refill it',async()=>{
+  const c=setup();c.api.jsonp=async()=>({data:[]});
+  await c.api.read('listDocuments',{});
+  await c.api.saveDocument('A','Doc',{link:'https://example.test'});
+  assert.equal(c.sessionStorage.getItem('zonexa.readCache.v1'),null);
+  let finish;c.api.jsonp=()=>new Promise(resolve=>finish=resolve);
+  const pending=c.api.read('listStageProgress',{});
+  c.store.clearSession();finish({data:[]});
+  await assert.rejects(pending,/changed/);
+  assert.equal(c.sessionStorage.getItem('zonexa.readCache.v1'),null);
+});
